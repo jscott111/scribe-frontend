@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import './App.css'
 import AudioRecorder from './components/AudioRecorder'
 import LanguageSelector from './components/LanguageSelector'

@@ -1,3 +1,4 @@
+import React from 'react'
 import { Language } from '../App'
 
 interface TranslationDisplayProps {

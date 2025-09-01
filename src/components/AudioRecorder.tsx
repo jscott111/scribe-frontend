@@ -1,6 +1,14 @@
-import { useRef, useEffect, useState } from 'react'
+import React, { useRef, useEffect, useState } from 'react'
 import { Language } from '../App'
 import { io, Socket } from 'socket.io-client'
+
+// Add Web Speech API types
+declare global {
+  interface Window {
+    SpeechRecognition: any
+    webkitSpeechRecognition: any
+  }
+}
 
 interface AudioRecorderProps {
   isRecording: boolean
@@ -21,11 +29,9 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
 }) => {
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string>('')
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const [currentTranscription, setCurrentTranscription] = useState<string>('')
   const socketRef = useRef<Socket | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const microphoneRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const recognitionRef = useRef<any>(null)
 
   useEffect(() => {
     // Initialize WebSocket connection
@@ -61,72 +67,86 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     try {
       setError('')
       setIsProcessing(true)
+      setCurrentTranscription('')
 
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          sampleRate: 16000
-        } 
-      })
-
-      // Set up audio context for real-time processing
-      audioContextRef.current = new AudioContext()
-      analyserRef.current = audioContextRef.current.createAnalyser()
-      microphoneRef.current = audioContextRef.current.createMediaStreamSource(stream)
-      
-      microphoneRef.current.connect(analyserRef.current)
-      
-      // Configure analyser for real-time audio
-      analyserRef.current.fftSize = 2048
-      const bufferLength = analyserRef.current.frequencyBinCount
-      const dataArray = new Uint8Array(bufferLength)
-
-      // Start real-time audio streaming
-      const streamAudio = () => {
-        if (!isRecording || !analyserRef.current || !socketRef.current) return
-
-        analyserRef.current.getByteFrequencyData(dataArray)
-        
-        // Convert audio data to base64 and send via WebSocket
-        const audioData = Array.from(dataArray)
-        socketRef.current?.emit('audioStream', {
-          audioData,
-          sourceLanguage: sourceLanguage.code,
-          targetLanguage: targetLanguage.code
-        })
-
-        requestAnimationFrame(streamAudio)
+      // Check if Web Speech API is available
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        throw new Error('Speech recognition not supported in this browser')
       }
 
-      streamAudio()
-      setIsRecording(true)
+      // Initialize speech recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      recognitionRef.current = new SpeechRecognition()
+      
+      recognitionRef.current.continuous = true
+      recognitionRef.current.interimResults = true
+      recognitionRef.current.lang = sourceLanguage.code
+      
+      recognitionRef.current.onstart = () => {
+        console.log('🎤 Speech recognition started')
+        setIsRecording(true)
+      }
+      
+      recognitionRef.current.onresult = (event) => {
+        let finalTranscript = ''
+        let interimTranscript = ''
+        
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript
+          } else {
+            interimTranscript += transcript
+          }
+        }
+        
+        // Update current transcription display
+        setCurrentTranscription(finalTranscript + interimTranscript)
+        
+        // Send final transcriptions to backend for translation
+        if (finalTranscript && socketRef.current) {
+          console.log('🎤 Sending real transcription:', finalTranscript)
+          
+          socketRef.current.emit('speechTranscription', {
+            transcription: finalTranscript,
+            sourceLanguage: sourceLanguage.code,
+            targetLanguage: targetLanguage.code
+          })
+        }
+      }
+      
+      recognitionRef.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error)
+        setError(`Speech recognition error: ${event.error}`)
+        setIsProcessing(false)
+        setIsRecording(false)
+      }
+      
+      recognitionRef.current.onend = () => {
+        console.log('🎤 Speech recognition ended')
+        setIsRecording(false)
+        setIsProcessing(false)
+      }
+      
+      // Start speech recognition
+      recognitionRef.current.start()
       
     } catch (err) {
-      setError('Failed to access microphone. Please check permissions.')
+      setError('Failed to start speech recognition. Please check browser support.')
       setIsProcessing(false)
       console.error('Error starting recording:', err)
     }
   }
 
   const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+    
     setIsRecording(false)
     setIsProcessing(false)
-    
-    // Stop all audio streams
-    if (microphoneRef.current) {
-      microphoneRef.current.disconnect()
-      microphoneRef.current = null
-    }
-    
-    if (audioContextRef.current) {
-      audioContextRef.current.close()
-      audioContextRef.current = null
-    }
-
-    // Notify backend to stop processing
-    socketRef.current?.emit('stopStreaming')
+    setCurrentTranscription('')
   }
 
   const handleToggleRecording = () => {
@@ -165,12 +185,19 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         </div>
       )}
 
+      {currentTranscription && (
+        <div className="transcription-display">
+          <h4>🎤 What you said:</h4>
+          <p>{currentTranscription}</p>
+        </div>
+      )}
+
       <div className="recorder-info">
         <p>Source: <strong>{sourceLanguage.name}</strong></p>
         <p>Target: <strong>{targetLanguage.name}</strong></p>
         {isRecording && (
           <p className="recording-info">
-            🎵 Recording and streaming audio in real-time...
+            🎵 Listening and transcribing in real-time...
           </p>
         )}
       </div>
