@@ -1,11 +1,11 @@
 import React from 'react'
-import { Language } from '../App'
+import { LanguageCode, getLanguageInfo } from '../enums/azureLangs'
 
 interface TranslationDisplayProps {
   translatedText: string
   isProcessing: boolean
-  sourceLanguage: Language
-  targetLanguage: Language
+  sourceLanguage: LanguageCode
+  targetLanguage: LanguageCode
 }
 
 const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
@@ -14,17 +14,20 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
   sourceLanguage,
   targetLanguage
 }) => {
+  const sourceLanguageInfo = getLanguageInfo(sourceLanguage)
+  const targetLanguageInfo = getLanguageInfo(targetLanguage)
+
   return (
     <div className="translation-display">
       <div className="translation-header">
         <h3>Translation</h3>
         <div className="language-flow">
           <span className="language-badge source">
-            {sourceLanguage.flag} {sourceLanguage.name}
+            {sourceLanguageInfo.flag} {sourceLanguageInfo.name}
           </span>
           <span className="arrow">→</span>
           <span className="language-badge target">
-            {targetLanguage.flag} {targetLanguage.name}
+            {targetLanguageInfo.flag} {targetLanguageInfo.name}
           </span>
         </div>
       </div>
@@ -60,7 +63,7 @@ const TranslationDisplay: React.FC<TranslationDisplayProps> = ({
             className="action-button"
             onClick={() => {
               const utterance = new SpeechSynthesisUtterance(translatedText)
-              utterance.lang = targetLanguage.code
+              utterance.lang = targetLanguage
               speechSynthesis.speak(utterance)
             }}
             type="button"

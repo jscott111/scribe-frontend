@@ -3,31 +3,11 @@ import './App.css'
 import AudioRecorder from './components/AudioRecorder'
 import LanguageSelector from './components/LanguageSelector'
 import TranslationDisplay from './components/TranslationDisplay'
-
-export interface Language {
-  code: string
-  name: string
-  flag: string
-}
-
-const SUPPORTED_LANGUAGES: Language[] = [
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Spanish', flag: '🇪🇸' },
-  { code: 'fr', name: 'French', flag: '🇫🇷' },
-  { code: 'de', name: 'German', flag: '🇩🇪' },
-  { code: 'it', name: 'Italian', flag: '🇮🇹' },
-  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
-  { code: 'ru', name: 'Russian', flag: '🇷🇺' },
-  { code: 'ja', name: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', flag: '🇰🇷' },
-  { code: 'zh', name: 'Chinese', flag: '🇨🇳' },
-  { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
-  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
-]
+import { LanguageCode, getSupportedLanguages } from './enums/azureLangs'
 
 function App() {
-  const [sourceLanguage, setSourceLanguage] = useState<Language>(SUPPORTED_LANGUAGES[0])
-  const [targetLanguage, setTargetLanguage] = useState<Language>(SUPPORTED_LANGUAGES[1])
+  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(LanguageCode.ES)
   const [isRecording, setIsRecording] = useState(false)
   const [translatedText, setTranslatedText] = useState<string>('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -54,7 +34,7 @@ function App() {
             label="From"
             selectedLanguage={sourceLanguage}
             onLanguageChange={setSourceLanguage}
-            languages={SUPPORTED_LANGUAGES}
+            languages={getSupportedLanguages()}
           />
           
           <button 
@@ -69,7 +49,6 @@ function App() {
             label="To"
             selectedLanguage={targetLanguage}
             onLanguageChange={setTargetLanguage}
-            languages={SUPPORTED_LANGUAGES}
           />
         </div>
 

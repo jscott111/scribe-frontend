@@ -1,22 +1,20 @@
 import React, { useState } from 'react'
-import { Language } from '../App'
+import { LanguageCode, getLanguageInfo, getLanguageFlag, getLanguageName, getSupportedLanguages } from '../enums/azureLangs'
 
 interface LanguageSelectorProps {
   label: string
-  selectedLanguage: Language
-  onLanguageChange: (language: Language) => void
-  languages: Language[]
+  selectedLanguage: LanguageCode
+  onLanguageChange: (language: LanguageCode) => void
 }
 
 const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   label,
   selectedLanguage,
-  onLanguageChange,
-  languages
+  onLanguageChange
 }) => {
   const [isOpen, setIsOpen] = useState(false)
 
-  const handleLanguageSelect = (language: Language) => {
+  const handleLanguageSelect = (language: LanguageCode) => {
     onLanguageChange(language)
     setIsOpen(false)
   }
@@ -30,18 +28,18 @@ const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           onClick={() => setIsOpen(!isOpen)}
           type="button"
         >
-          <span className="language-flag">{selectedLanguage.flag}</span>
-          <span className="language-name">{selectedLanguage.name}</span>
+          <span className="language-flag">{getLanguageFlag(selectedLanguage)}</span>
+          <span className="language-name">{getLanguageName(selectedLanguage)}</span>
           <span className="dropdown-arrow">▼</span>
         </button>
         
         {isOpen && (
           <div className="language-options">
-            {languages.map((language) => (
+            {getSupportedLanguages().map((language) => (
               <button
                 key={language.code}
-                className={`language-option ${selectedLanguage.code === language.code ? 'selected' : ''}`}
-                onClick={() => handleLanguageSelect(language)}
+                className={`language-option ${selectedLanguage === language.code ? 'selected' : ''}`}
+                onClick={() => handleLanguageSelect(language.code as LanguageCode)}
                 type="button"
               >
                 <span className="language-flag">{language.flag}</span>

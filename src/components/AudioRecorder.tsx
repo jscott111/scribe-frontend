@@ -1,8 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { Language } from '../App'
+import { LanguageCode } from '../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 
-// Add Web Speech API types
 declare global {
   interface Window {
     SpeechRecognition: any
@@ -13,8 +12,8 @@ declare global {
 interface AudioRecorderProps {
   isRecording: boolean
   setIsRecording: (recording: boolean) => void
-  sourceLanguage: Language
-  targetLanguage: Language
+  sourceLanguage: LanguageCode
+  targetLanguage: LanguageCode
   onTranslation: (text: string) => void
   setIsProcessing: (processing: boolean) => void
 }
@@ -69,18 +68,16 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       setIsProcessing(true)
       setCurrentTranscription('')
 
-      // Check if Web Speech API is available
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         throw new Error('Speech recognition not supported in this browser')
       }
 
-      // Initialize speech recognition
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
       recognitionRef.current = new SpeechRecognition()
       
       recognitionRef.current.continuous = true
       recognitionRef.current.interimResults = true
-      recognitionRef.current.lang = sourceLanguage.code
+      recognitionRef.current.lang = sourceLanguage
       
       recognitionRef.current.onstart = () => {
         console.log('🎤 Speech recognition started')
@@ -100,17 +97,15 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
           }
         }
         
-        // Update current transcription display
         setCurrentTranscription(finalTranscript + interimTranscript)
         
-        // Send final transcriptions to backend for translation
         if (finalTranscript && socketRef.current) {
           console.log('🎤 Sending real transcription:', finalTranscript)
           
           socketRef.current.emit('speechTranscription', {
             transcription: finalTranscript,
-            sourceLanguage: sourceLanguage.code,
-            targetLanguage: targetLanguage.code
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage
           })
         }
       }
@@ -128,7 +123,6 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         setIsProcessing(false)
       }
       
-      // Start speech recognition
       recognitionRef.current.start()
       
     } catch (err) {
@@ -193,8 +187,8 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       )}
 
       <div className="recorder-info">
-        <p>Source: <strong>{sourceLanguage.name}</strong></p>
-        <p>Target: <strong>{targetLanguage.name}</strong></p>
+        <p>Source: <strong>{sourceLanguage}</strong></p>
+        <p>Target: <strong>{targetLanguage}</strong></p>
         {isRecording && (
           <p className="recording-info">
             🎵 Listening and transcribing in real-time...
