@@ -1,9 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { LanguageCode } from '../enums/azureLangs'
+import { LanguageCode } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import './InputClient.css'
 
-// TypeScript declarations for Web Speech API
 declare global {
   interface Window {
     SpeechRecognition: any
@@ -39,7 +38,6 @@ const InputClient: React.FC<InputClientProps> = ({
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    // Initialize Socket.IO connection
     socketRef.current = io('http://localhost:3001')
     
     socketRef.current.on('connect', () => {
@@ -49,7 +47,6 @@ const InputClient: React.FC<InputClientProps> = ({
     socketRef.current.on('transcriptionComplete', (data) => {
       console.log('✅ Transcription complete:', data)
       
-      // Mark the current transcription as complete
       setTranscriptionBubbles(prev => 
         prev.map(bubble => 
           bubble.id === data.bubbleId 
@@ -100,7 +97,6 @@ const InputClient: React.FC<InputClientProps> = ({
       }
 
       if (finalTranscript) {
-        // Create new transcription bubble
         const newBubble: TranscriptionBubble = {
           id: Date.now().toString(),
           text: finalTranscript,
@@ -111,7 +107,6 @@ const InputClient: React.FC<InputClientProps> = ({
         setTranscriptionBubbles(prev => [...prev, newBubble])
         setCurrentTranscription('')
         
-        // Send to backend for translation
         if (socketRef.current && socketRef.current.connected) {
           socketRef.current.emit('speechTranscription', {
             transcription: finalTranscript,
@@ -121,12 +116,10 @@ const InputClient: React.FC<InputClientProps> = ({
           })
         }
         
-        // Reset timeout for thought completion
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current)
         }
         timeoutRef.current = setTimeout(() => {
-          // Mark as complete after 2 seconds of silence
           setTranscriptionBubbles(prev => 
             prev.map(bubble => 
               bubble.id === newBubble.id 

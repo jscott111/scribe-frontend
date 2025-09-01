@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { LanguageCode, getLanguageInfo } from '../enums/azureLangs'
+import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import './TranslationClient.css'
 
@@ -28,7 +28,6 @@ const TranslationClient: React.FC<TranslationClientProps> = ({
   const socketRef = useRef<Socket | null>(null)
 
   useEffect(() => {
-    // Initialize Socket.IO connection
     socketRef.current = io('http://localhost:3001')
     
     socketRef.current.on('connect', () => {

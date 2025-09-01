@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
 import './InputApp.css'
-import InputClient from './components/InputClient'
-import LanguageSelector from './components/LanguageSelector'
-import { LanguageCode, getSupportedLanguages } from './enums/azureLangs'
+import InputClient from './InputClient'
+import LanguageSelector from '../LanguageSelector'
+import { LanguageCode, getSupportedLanguages } from '../../enums/azureLangs'
 
 function InputApp() {
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
