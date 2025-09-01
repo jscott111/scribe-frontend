@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import InputApp from './InputApp.tsx'
-import TranslationApp from './TranslationApp.tsx'
+import InputApp from './components/Input/InputApp.tsx'
+import TranslationApp from './components/Output/TranslationApp.tsx'
 import './index.css'
 
 const getAppComponent = () => {

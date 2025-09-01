@@ -3,6 +3,7 @@ import './InputApp.css'
 import InputClient from './InputClient'
 import LanguageSelector from '../LanguageSelector'
 import { LanguageCode, getSupportedLanguages } from '../../enums/azureLangs'
+import { Container } from '@mui/material'
 
 function InputApp() {
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
@@ -19,7 +20,7 @@ function InputApp() {
   }
 
   return (
-    <div className="input-app">
+    <Container maxWidth="lg">
       <header className="input-app-header">
         <h1>🎤 Tongues Input Client</h1>
         <p>Record audio and see transcriptions in real-time</p>
@@ -56,11 +57,7 @@ function InputApp() {
           onLanguageChange={handleLanguageChange}
         />
       </main>
-
-      <footer className="input-app-footer">
-        <p>🌍 Translation Client available at <strong>http://localhost:5174</strong></p>
-      </footer>
-    </div>
+    </Container>
   )
 }
 
