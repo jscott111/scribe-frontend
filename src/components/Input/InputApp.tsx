@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
-import { LanguageCode } from '../../enums/azureLangs'
+import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { Paper, Chip, Button } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import { io, Socket } from 'socket.io-client'
@@ -77,7 +77,7 @@ const BubblesContainer = styled.div`
 
 function InputApp() {
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
-  const [connectionCount, setConnectionCount] = useState<number>(0)
+  const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
@@ -100,8 +100,8 @@ function InputApp() {
       setIsProcessing(false)
     })
 
-    socketRef.current.on('connectionCount', (count: number) => {
-      setConnectionCount(count)
+    socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
+      setConnectionCount(data)
     })
 
     socketRef.current.emit('getConnectionCount')
@@ -210,16 +210,31 @@ function InputApp() {
         
         <ConnectionDisplay>
           <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-          <Chip
-            label={`${connectionCount - 1} connection${connectionCount - 1 === 1 ? '' : 's'}`}
-            color="primary"
-            variant="outlined"
-            sx={{
-              fontSize: '1rem',
-              fontWeight: 'bold',
-              minWidth: '120px'
-            }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <Chip
+              label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+              color="primary"
+              variant="outlined"
+              sx={{
+                fontSize: '1rem',
+                fontWeight: 'bold',
+                width: '10rem'
+              }}
+            />
+            {Object.keys(connectionCount.byLanguage).length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
+                  <Chip
+                    key={lang}
+                    label={`${getLanguageInfo(lang as LanguageCode).flag} ${count}`}
+                    size="small"
+                    variant="outlined"
+                    sx={{ fontSize: '0.75rem' }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </ConnectionDisplay>
 
         <LanguageSelector

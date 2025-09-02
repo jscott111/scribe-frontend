@@ -117,6 +117,7 @@ function TranslationApp() {
     socketRef.current.on('connect', () => {
       console.log('🔌 Translation Client connected to backend')
       setIsConnected(true)
+      socketRef.current?.emit('setTargetLanguage', { targetLanguage })
     })
     
     socketRef.current.on('disconnect', () => {
@@ -172,6 +173,12 @@ function TranslationApp() {
       }
     }
   }, [targetLanguage])
+
+  useEffect(() => {
+    if (socketRef.current && isConnected) {
+      socketRef.current.emit('setTargetLanguage', { targetLanguage })
+    }
+  }, [targetLanguage, isConnected])
 
   const translateText = async (text: string, fromLang: LanguageCode, toLang: LanguageCode): Promise<string> => {
     try {
