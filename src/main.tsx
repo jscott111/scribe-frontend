@@ -23,5 +23,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <CssBaseline />
       {getAppComponent()}
     </ThemeProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 )

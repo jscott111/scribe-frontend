@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import './InputApp.css'
-import InputClient from './InputClient'
-import LanguageSelector from '../LanguageSelector'
+import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
-import { LanguageCode, getSupportedLanguages } from '../../enums/azureLangs'
+import { LanguageCode } from '../../enums/azureLangs'
 import { Paper, Chip, Button } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import { io, Socket } from 'socket.io-client'
@@ -38,7 +36,7 @@ const PaperCards = styled(Paper)`
 const LeftPanel = styled(PaperCards)`
   max-width: 30%;
   min-width: 20%;
-  border-radius: 2rem;
+  border-radius: 2rem!important;
   margin: 1rem;
   margin-right: 0.5rem;
 `
@@ -47,7 +45,7 @@ const RightPanel = styled(PaperCards)`
   flex: 1 1 70%;
   max-width: 80%;
   min-width: 70%;
-  border-radius: 2rem;
+  border-radius: 1rem!important;
   margin: 1rem;
   margin-left: 0.5rem;
 `
@@ -56,13 +54,13 @@ const ConnectionDisplay = styled.div`
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-top: 24px;
+  margin-top: 4rem;
+  margin-bottom: 2rem;
 `
 
 const MessageBubble = styled(Paper)`
   padding: 0.75rem 1rem;
   border-radius: 4rem!important;
-  margin: 0.25rem 0.25rem;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
@@ -121,9 +119,10 @@ function InputApp() {
       return
     }
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    recognitionRef.current = new SpeechRecognition()
-    
+    const SpeechRecognitionClass =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    recognitionRef.current = new SpeechRecognitionClass()
+
     recognitionRef.current.continuous = true
     recognitionRef.current.interimResults = true
     recognitionRef.current.lang = sourceLanguage
@@ -175,9 +174,9 @@ function InputApp() {
                 ? { ...bubble, isComplete: true }
                 : bubble
             )
-          );
-          setIsProcessing(false);
-        }, 2000);
+          )
+          setIsProcessing(false)
+        }, 2000)
       } else {
         setCurrentTranscription(interimTranscript)
       }
@@ -206,13 +205,13 @@ function InputApp() {
 
   return (
     <MainContainer>
-      <LeftPanel elevation={12}>
+      <LeftPanel elevation={3}>
         <Typography variant="appTitle">Scribe</Typography>
         
         <ConnectionDisplay>
           <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
           <Chip
-            label={`${connectionCount - 1} listening`}
+            label={`${connectionCount - 1} connection${connectionCount - 1 === 1 ? '' : 's'}`}
             color="primary"
             variant="outlined"
             sx={{
@@ -224,7 +223,7 @@ function InputApp() {
         </ConnectionDisplay>
 
         <LanguageSelector
-          label="From"
+          label="Source Language"
           selectedLanguage={sourceLanguage}
           onLanguageChange={setSourceLanguage}
         />
@@ -233,7 +232,8 @@ function InputApp() {
           variant="contained"
           color="primary"
           sx={{
-            borderRadius: '2rem'
+            borderRadius: '2rem',
+            marginTop: '2rem'
           }}
           onClick={() => {
             if (isTranslating) {
@@ -251,7 +251,7 @@ function InputApp() {
         </Button>
       </LeftPanel>
 
-      <RightPanel elevation={12}>
+      <RightPanel elevation={3}>
         <BubblesContainer>
           {currentTranscription && (
             <MessageBubble elevation={1} sx={{ opacity: 0.7 }}>

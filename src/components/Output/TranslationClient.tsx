@@ -1,7 +1,45 @@
 import React, { useRef, useEffect, useState } from 'react'
+import { styled } from '@mui/material/styles'
+import { Paper, Typography, Button, IconButton } from '@mui/material'
+import { VolumeUp, ContentCopy } from '@mui/icons-material'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
-import './TranslationClient.css'
+
+const MessageBubble = styled(Paper)`
+  padding: 0.75rem 1rem;
+  border-radius: 4rem !important;
+  margin: 0.5rem 1rem;
+  width: fit-content;
+  max-width: 80%;
+  align-self: flex-end;
+`
+
+const BubblesContainer = styled.div`
+  display: flex;
+  flex-direction: column-reverse;
+  overflow-y: auto;
+  flex: 1;
+  padding: 1rem 0;
+  gap: 0.5rem;
+`
+
+const EmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #b0b0b0;
+  text-align: center;
+  padding: 2rem;
+`
+
+const BubbleActions = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  justify-content: flex-end;
+`
 
 interface TranslationBubble {
   id: string
@@ -141,91 +179,79 @@ const TranslationClient: React.FC<TranslationClientProps> = ({
   }
 
   return (
-    <div className="translation-client">
-      <div className="translation-header">
-        <h2>🌍 Translation Client</h2>
-        <div className="connection-status">
-          <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
-            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-          </span>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <Typography variant="h6" sx={{ color: 'primary.main' }}>
+          🌍 Translation Client
+        </Typography>
+        <div style={{ 
+          width: '8px', 
+          height: '8px', 
+          borderRadius: '50%', 
+          backgroundColor: isConnected ? '#4caf50' : '#f44336' 
+        }} />
+        <Typography variant="captionText" sx={{ color: 'text.secondary' }}>
+          {isConnected ? 'Connected' : 'Disconnected'}
+        </Typography>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Typography variant="bodyText">{getSourceLanguageInfo().flag}</Typography>
+          <Typography variant="bodyText">{getSourceLanguageInfo().name}</Typography>
+        </div>
+        <Typography variant="bodyText">→</Typography>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Typography variant="bodyText">{getTargetLanguageInfo().flag}</Typography>
+          <Typography variant="bodyText">{getTargetLanguageInfo().name}</Typography>
         </div>
       </div>
 
-      <div className="language-info">
-        <div className="language-pair">
-          <div className="language-item">
-            <span className="language-flag">{getSourceLanguageInfo().flag}</span>
-            <span className="language-name">{getSourceLanguageInfo().name}</span>
-          </div>
-          <div className="arrow">→</div>
-          <div className="language-item">
-            <span className="language-flag">{getTargetLanguageInfo().flag}</span>
-            <span className="language-name">{getTargetLanguageInfo().name}</span>
-          </div>
-        </div>
-      </div>
+      <Button
+        variant="outlined"
+        color="secondary"
+        onClick={clearBubbles}
+        disabled={translationBubbles.length === 0}
+        sx={{ alignSelf: 'flex-start', marginBottom: '1rem' }}
+      >
+        🗑️ Clear All
+      </Button>
 
-      <div className="controls">
-        <button
-          className="clear-button"
-          onClick={clearBubbles}
-          disabled={translationBubbles.length === 0}
-        >
-          🗑️ Clear All
-        </button>
-      </div>
-
-      <div className="translation-bubbles">
+      <BubblesContainer>
         {translationBubbles.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">🌍</div>
-            <h3>Waiting for translations...</h3>
-            <p>Start speaking in the Input Client to see translations appear here</p>
-          </div>
+          <EmptyState>
+            <Typography variant="h4" sx={{ marginBottom: '1rem' }}>🌍</Typography>
+            <Typography variant="h6" sx={{ marginBottom: '0.5rem' }}>Waiting for translations...</Typography>
+            <Typography variant="bodyText">Start speaking in the Input Client to see translations appear here</Typography>
+          </EmptyState>
         ) : (
-          translationBubbles.map((bubble) => (
-            <div
-              key={bubble.id}
-              className={`translation-bubble ${bubble.isComplete ? 'complete' : 'incomplete'}`}
-            >
-              <div className="bubble-header">
-                <span className="bubble-time">
-                  {bubble.timestamp.toLocaleTimeString()}
-                </span>
-                <span className="bubble-status">
-                  {bubble.isComplete ? '✅ Complete' : '🔄 Processing...'}
-                </span>
-              </div>
-              
-              <div className="bubble-content">
-                <div className="translated-text">
-                  <div className="text-label">
-                    <span className="language-flag">{getLanguageInfo(bubble.targetLanguage).flag}</span>
-                    <span>Translation ({getLanguageInfo(bubble.targetLanguage).name})</span>
-                  </div>
-                  <p className="text-content">{bubble.translatedText}</p>
-                  <div className="text-actions">
-                    <button
-                      className="action-button"
-                      onClick={() => copyToClipboard(bubble.translatedText)}
-                      title="Copy translation"
-                    >
-                      📋 Copy
-                    </button>
-                    <button
-                      className="action-button"
-                      onClick={() => speakText(bubble.translatedText, bubble.targetLanguage)}
-                      title="Speak translation"
-                    >
-                      🔊 Speak
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+          translationBubbles.slice().reverse().map((bubble) => (
+            <MessageBubble key={bubble.id} elevation={3}>
+              <Typography variant="bodyText" sx={{ marginBottom: '0.5rem' }}>
+                {bubble.translatedText}
+              </Typography>
+              <BubbleActions>
+                <IconButton
+                  size="small"
+                  onClick={() => copyToClipboard(bubble.translatedText)}
+                  title="Copy translation"
+                  sx={{ color: 'primary.main' }}
+                >
+                  <ContentCopy fontSize="small" />
+                </IconButton>
+                <IconButton
+                  size="small"
+                  onClick={() => speakText(bubble.translatedText, bubble.targetLanguage)}
+                  title="Speak translation"
+                  sx={{ color: 'primary.main' }}
+                >
+                  <VolumeUp fontSize="small" />
+                </IconButton>
+              </BubbleActions>
+            </MessageBubble>
           ))
         )}
-      </div>
+      </BubblesContainer>
     </div>
   )
 }
