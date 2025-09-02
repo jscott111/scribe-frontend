@@ -1,0 +1,183 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+
+interface User {
+  id: number
+  email: string
+  name: string
+  createdAt: string
+  updatedAt?: string
+}
+
+interface AuthTokens {
+  accessToken: string
+  refreshToken: string
+}
+
+interface AuthContextType {
+  user: User | null
+  tokens: AuthTokens | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string, name: string) => Promise<void>
+  logout: () => void
+  refreshToken: () => Promise<boolean>
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+interface AuthProviderProps {
+  children: ReactNode
+}
+
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null)
+  const [tokens, setTokens] = useState<AuthTokens | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const isAuthenticated = !!user && !!tokens
+
+  // Load tokens from localStorage on mount
+  useEffect(() => {
+    const loadStoredAuth = () => {
+      try {
+        const storedTokens = localStorage.getItem('authTokens')
+        const storedUser = localStorage.getItem('authUser')
+        
+        if (storedTokens && storedUser) {
+          const parsedTokens = JSON.parse(storedTokens)
+          const parsedUser = JSON.parse(storedUser)
+          
+          setTokens(parsedTokens)
+          setUser(parsedUser)
+        }
+      } catch (error) {
+        console.error('Error loading stored auth:', error)
+        // Clear invalid stored data
+        localStorage.removeItem('authTokens')
+        localStorage.removeItem('authUser')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadStoredAuth()
+  }, [])
+
+  // Store tokens in localStorage when they change
+  useEffect(() => {
+    if (tokens && user) {
+      localStorage.setItem('authTokens', JSON.stringify(tokens))
+      localStorage.setItem('authUser', JSON.stringify(user))
+    } else {
+      localStorage.removeItem('authTokens')
+      localStorage.removeItem('authUser')
+    }
+  }, [tokens, user])
+
+  const login = async (email: string, password: string): Promise<void> => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Login failed')
+      }
+
+      const data = await response.json()
+      setUser(data.user)
+      setTokens(data.tokens)
+    } catch (error) {
+      console.error('Login error:', error)
+      throw error
+    }
+  }
+
+  const register = async (email: string, password: string, name: string): Promise<void> => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password, name }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Registration failed')
+      }
+
+      const data = await response.json()
+      setUser(data.user)
+      setTokens(data.tokens)
+    } catch (error) {
+      console.error('Registration error:', error)
+      throw error
+    }
+  }
+
+  const logout = (): void => {
+    setUser(null)
+    setTokens(null)
+    localStorage.removeItem('authTokens')
+    localStorage.removeItem('authUser')
+  }
+
+  const refreshToken = async (): Promise<boolean> => {
+    if (!tokens?.refreshToken) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed')
+      }
+
+      const data = await response.json()
+      setTokens(data.tokens)
+      return true
+    } catch (error) {
+      console.error('Token refresh error:', error)
+      logout()
+      return false
+    }
+  }
+
+  const value: AuthContextType = {
+    user,
+    tokens,
+    isAuthenticated,
+    isLoading,
+    login,
+    register,
+    logout,
+    refreshToken,
+  }
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
+}
+
+export default AuthContext

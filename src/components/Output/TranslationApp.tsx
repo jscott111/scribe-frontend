@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
-import { Paper, Chip, Button, Box, useMediaQuery, useTheme } from '@mui/material'
+import { Paper, Chip, Button, Box, useMediaQuery, useTheme, IconButton } from '@mui/material'
 import LanguageSelector from '../LanguageSelector'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
+import { useSession } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 
 const LandingPageContainer = styled.div`
@@ -203,11 +204,38 @@ function TranslationApp() {
   const socketRef = useRef<Socket | null>(null)
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+  const { sessionId, setSessionId, clearSessionId } = useSession()
+
+  // Get session ID from URL parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const sessionFromUrl = urlParams.get('session')
+    console.log('🔗 TranslationApp - Session from URL:', sessionFromUrl)
+    console.log('🔗 TranslationApp - Current sessionId:', sessionId)
+    
+    if (sessionFromUrl) {
+      console.log('🔗 TranslationApp - Setting session ID:', sessionFromUrl)
+      setSessionId(sessionFromUrl)
+    } else {
+      console.log('🔗 TranslationApp - No session ID in URL, clearing session and showing blank page')
+      clearSessionId() // Clear any existing session ID
+    }
+  }, []) // Remove dependencies to avoid infinite loop
 
   useEffect(() => {
-    if (!targetLanguage) return
+    console.log('🔗 TranslationApp - Connecting with sessionId:', sessionId, 'targetLanguage:', targetLanguage)
+    
+    // Only connect if we have both a session ID and target language
+    if (!targetLanguage || !sessionId) {
+      console.log('🔗 TranslationApp - Not connecting: missing sessionId or targetLanguage')
+      return
+    }
 
-    socketRef.current = io(CONFIG.BACKEND_URL)
+    socketRef.current = io(CONFIG.BACKEND_URL, {
+      auth: {
+        sessionId: sessionId
+      }
+    })
     
     socketRef.current.on('connect', () => {
       console.log('🔌 Translation Client connected to backend')
@@ -267,7 +295,7 @@ function TranslationApp() {
         socketRef.current.disconnect()
       }
     }
-  }, [targetLanguage])
+  }, [targetLanguage, sessionId])
 
   useEffect(() => {
     if (socketRef.current && isConnected && targetLanguage) {
@@ -308,6 +336,30 @@ function TranslationApp() {
     if (socketRef.current) {
       socketRef.current.disconnect()
     }
+  }
+
+  if (!sessionId) {
+    return (
+      <LandingPageContainer>
+        <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
+          <Typography variant="appTitle" sx={{ fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '1rem' }}>
+            Scribe
+          </Typography>
+          
+          <Typography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
+            No Session Found
+          </Typography>
+          
+          <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary' }}>
+            This translation app requires a session ID to connect to a live translation session.
+          </Typography>
+          
+          <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary', marginTop: '1rem' }}>
+            Please scan the QR code from the speaker's device to join their session.
+          </Typography>
+        </LandingCard>
+      </LandingPageContainer>
+    )
   }
 
   if (showLanguageSelection) {

@@ -8,7 +8,7 @@
     "dev": "./start-dual-clients.sh",
     "dev:input": "vite --port 5173 --open",
     "dev:translation": "vite --port 5174 --open",
-    "kill": "pkill -f 'vite'",
+    "kill": "pkill -f 'node'",
     "kill:input": "pkill -f 'vite --port 5173 --open'",
     "kill:translation": "pkill -f 'vite --port 5174 --open'",
     "build": "tsc && vite build",

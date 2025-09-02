@@ -2,13 +2,16 @@ import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
-import { Paper, Chip, Button } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
+import LogoutIcon from '@mui/icons-material/Logout'
 import QRCode from 'react-qr-code'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
+import { useAuth } from '../../contexts/AuthContext'
+import { useSession } from '../../contexts/SessionContext'
 
 interface MessageBubble {
   id: string
@@ -109,9 +112,42 @@ function InputApp() {
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
+  const { user, tokens, logout } = useAuth()
+  const { sessionId, generateSessionId, setSessionId, forceNewSessionId } = useSession()
+
+  // Generate session ID immediately when component mounts
+  useEffect(() => {
+    if (!sessionId) {
+      const newSessionId = generateSessionId()
+      console.log('🔗 InputApp generated new session ID on mount:', newSessionId)
+    } else {
+      console.log('🔗 InputApp using existing session ID:', sessionId)
+      // Check if the session ID is in the old format and force a new one
+      if (sessionId.length > 8) {
+        console.log('🔗 InputApp found old format session ID, forcing new one:', sessionId)
+        forceNewSessionId()
+      }
+    }
+  }, [sessionId, generateSessionId, forceNewSessionId]) // Include dependencies
 
   useEffect(() => {
-    socketRef.current = io(CONFIG.BACKEND_URL)
+    if (!tokens) return
+
+    // Use existing session ID
+    const currentSessionId = sessionId
+    if (currentSessionId) {
+      console.log('🔗 InputApp using session ID:', currentSessionId)
+    } else {
+      console.log('🔗 InputApp: No session ID available yet')
+      return
+    }
+
+    socketRef.current = io(CONFIG.BACKEND_URL, {
+      auth: {
+        token: tokens.accessToken,
+        sessionId: currentSessionId
+      }
+    })
     
     socketRef.current.on('transcriptionComplete', (data) => {
       setTranscriptionBubbles(prev => 
@@ -220,7 +256,7 @@ function InputApp() {
         clearTimeout(timeoutRef.current)
       }
     }
-  }, [sourceLanguage])
+  }, [sourceLanguage, tokens, sessionId])
 
   const downloadQRCode = () => {
     if (qrCodeRef.current) {
@@ -266,7 +302,26 @@ function InputApp() {
   return (
     <MainContainer>
       <LeftPanel elevation={3}>
-        <Typography variant="appTitle">Scribe</Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <Typography variant="appTitle" sx={{ margin: 0 }}>Scribe</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>
+              {user?.name}
+            </Typography>
+            <IconButton
+              onClick={logout}
+              color="primary"
+              sx={{ 
+                borderRadius: '50%',
+                '&:hover': {
+                  backgroundColor: 'rgba(210, 180, 140, 0.1)'
+                }
+              }}
+            >
+              <LogoutIcon />
+            </IconButton>
+          </Box>
+        </Box>
         <ConnectionDisplay>
           <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -329,14 +384,34 @@ function InputApp() {
             Share this QR code with your audience
           </Typography>
           <QRCodeContainer ref={qrCodeRef}>
-            <QRCode
-              value={CONFIG.TRANSLATION_URL}
-              size={120}
-              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-            />
+            {sessionId ? (
+              <QRCode
+                value={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`}
+                size={120}
+                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+              />
+            ) : (
+              <Box sx={{ 
+                width: 120, 
+                height: 120, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px'
+              }}>
+                <Typography variant="captionText">Generating...</Typography>
+              </Box>
+            )}
           </QRCodeContainer>
           <Typography variant="captionText" sx={{ textAlign: 'center', fontSize: '0.75rem' }}>
-            <a href={CONFIG.TRANSLATION_URL} target="_blank" rel="noopener noreferrer">{CONFIG.TRANSLATION_URL}</a>
+            {sessionId ? (
+              <a href={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`} target="_blank" rel="noopener noreferrer">
+                {CONFIG.TRANSLATION_URL}?session={sessionId}
+              </a>
+            ) : (
+              'Generating session link...'
+            )}
           </Typography>
           <Button
             variant="outlined"
