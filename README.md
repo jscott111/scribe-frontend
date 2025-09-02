@@ -1,4 +1,4 @@
-# 🌍 Tongues Frontend
+# 🌍 Scribe Frontend
 
 React + TypeScript frontend for the Tongues real-time audio translation application with **dual-client architecture** for professional translation workflows.
 

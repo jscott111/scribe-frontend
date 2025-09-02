@@ -3,11 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Frontend for Tongues - Real-time audio translation app",
+  "description": "Frontend for Scribe - Real-time audio translation app",
   "scripts": {
     "dev": "./start-dual-clients.sh",
     "dev:input": "vite --port 5173 --open",
     "dev:translation": "vite --port 5174 --open",
+    "kill": "pkill -f 'vite'",
+    "kill:input": "pkill -f 'vite --port 5173 --open'",
+    "kill:translation": "pkill -f 'vite --port 5174 --open'",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
@@ -19,7 +22,8 @@
     "@mui/material": "^7.3.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "socket.io-client": "^4.7.2"
+    "socket.io-client": "^4.7.2",
+    "styled-components": "^6.1.19"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

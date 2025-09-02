@@ -19,14 +19,10 @@ interface TranscriptionBubble {
 
 interface InputClientProps {
   sourceLanguage: LanguageCode
-  targetLanguage: LanguageCode
-  onLanguageChange: (source: LanguageCode, target: LanguageCode) => void
 }
 
 const InputClient: React.FC<InputClientProps> = ({
-  sourceLanguage,
-  targetLanguage,
-  onLanguageChange
+  sourceLanguage
 }) => {
   const [isRecording, setIsRecording] = useState(false)
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<TranscriptionBubble[]>([])
@@ -111,7 +107,6 @@ const InputClient: React.FC<InputClientProps> = ({
           socketRef.current.emit('speechTranscription', {
             transcription: finalTranscript,
             sourceLanguage,
-            targetLanguage,
             bubbleId: newBubble.id
           })
         }
@@ -181,7 +176,7 @@ const InputClient: React.FC<InputClientProps> = ({
         <h2>🎤 Input Client</h2>
         <div className="language-display">
           <span className="language-badge">
-            {sourceLanguage.toUpperCase()} → {targetLanguage.toUpperCase()}
+            Speaking: {sourceLanguage.toUpperCase()}
           </span>
         </div>
       </div>

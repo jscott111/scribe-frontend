@@ -16,7 +16,7 @@ function TranslationApp() {
   return (
     <div className="translation-app">
       <header className="translation-app-header">
-        <h1>🌍 Tongues</h1>
+        <h1>🌍 Scribe</h1>
         <p>View real-time translations from the Input Client</p>
       </header>
 

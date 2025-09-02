@@ -40,21 +40,43 @@ const TranslationClient: React.FC<TranslationClientProps> = ({
       setIsConnected(false)
     })
     
-    socketRef.current.on('translation', (data) => {
-      console.log('📝 Received translation:', data)
+    socketRef.current.on('transcription', async (data) => {
+      console.log('📝 Received transcription:', data)
       
-      // Create new translation bubble
       const newBubble: TranslationBubble = {
         id: data.bubbleId || Date.now().toString(),
         originalText: data.originalText || 'Unknown',
-        translatedText: data.translatedText,
+        translatedText: 'Translating...', // Will be updated after translation
         sourceLanguage: data.sourceLanguage,
-        targetLanguage: data.targetLanguage,
+        targetLanguage: targetLanguage, // Use this client's target language
         timestamp: new Date(data.timestamp || Date.now()),
-        isComplete: true
+        isComplete: false
       }
       
       setTranslationBubbles(prev => [...prev, newBubble])
+      
+      // Translate the text using Azure Translator
+      try {
+        const translatedText = await translateText(data.originalText, data.sourceLanguage, targetLanguage)
+        
+        // Update the bubble with the translation
+        setTranslationBubbles(prev => 
+          prev.map(bubble => 
+            bubble.id === newBubble.id 
+              ? { ...bubble, translatedText, isComplete: true }
+              : bubble
+          )
+        )
+      } catch (error) {
+        console.error('Translation error:', error)
+        setTranslationBubbles(prev => 
+          prev.map(bubble => 
+            bubble.id === newBubble.id 
+              ? { ...bubble, translatedText: 'Translation failed', isComplete: true }
+              : bubble
+          )
+        )
+      }
     })
     
     socketRef.current.on('connect_error', (error) => {
@@ -90,6 +112,33 @@ const TranslationClient: React.FC<TranslationClientProps> = ({
 
   const getSourceLanguageInfo = () => getLanguageInfo(sourceLanguage)
   const getTargetLanguageInfo = () => getLanguageInfo(targetLanguage)
+
+  // Translation function using Azure Translator
+  const translateText = async (text: string, fromLang: LanguageCode, toLang: LanguageCode): Promise<string> => {
+    try {
+      const response = await fetch('http://localhost:3001/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          from: fromLang,
+          to: toLang
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Translation failed: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      return data.translatedText
+    } catch (error) {
+      console.error('Translation error:', error)
+      throw error
+    }
+  }
 
   return (
     <div className="translation-client">
@@ -149,32 +198,6 @@ const TranslationClient: React.FC<TranslationClientProps> = ({
               </div>
               
               <div className="bubble-content">
-                <div className="original-text">
-                  <div className="text-label">
-                    <span className="language-flag">{getLanguageInfo(bubble.sourceLanguage).flag}</span>
-                    <span>Original ({getLanguageInfo(bubble.sourceLanguage).name})</span>
-                  </div>
-                  <p className="text-content">{bubble.originalText}</p>
-                  <div className="text-actions">
-                    <button
-                      className="action-button"
-                      onClick={() => copyToClipboard(bubble.originalText)}
-                      title="Copy original text"
-                    >
-                      📋 Copy
-                    </button>
-                    <button
-                      className="action-button"
-                      onClick={() => speakText(bubble.originalText, bubble.sourceLanguage)}
-                      title="Speak original text"
-                    >
-                      🔊 Speak
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="translation-arrow">↓</div>
-                
                 <div className="translated-text">
                   <div className="text-label">
                     <span className="language-flag">{getLanguageInfo(bubble.targetLanguage).flag}</span>
