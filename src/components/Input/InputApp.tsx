@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { Paper, Chip, Button } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
+import DownloadIcon from '@mui/icons-material/Download'
+import QRCode from 'react-qr-code'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
+import { CONFIG } from '../../config/urls'
 
 interface MessageBubble {
   id: string
@@ -45,7 +48,7 @@ const RightPanel = styled(PaperCards)`
   flex: 1 1 70%;
   max-width: 80%;
   min-width: 70%;
-  border-radius: 1rem!important;
+  border-radius: 2rem!important;
   margin: 1rem;
   margin-left: 0.5rem;
 `
@@ -56,6 +59,26 @@ const ConnectionDisplay = styled.div`
   gap: 16px;
   margin-top: 4rem;
   margin-bottom: 2rem;
+`
+
+const QRCodeSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+`
+
+const QRCodeContainer = styled.div`
+  background: white;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 `
 
 const MessageBubble = styled(Paper)`
@@ -78,16 +101,17 @@ const BubblesContainer = styled.div`
 function InputApp() {
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
   const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
+  const [isTranslating, setIsTranslating] = useState(false)
+  const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
+  const [currentTranscription, setCurrentTranscription] = useState('')
+  
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
-  const [isTranslating, setIsTranslating] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
-  const [currentTranscription, setCurrentTranscription] = useState('')
+  const qrCodeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    socketRef.current = io('http://localhost:3001')
+    socketRef.current = io(CONFIG.BACKEND_URL)
     
     socketRef.current.on('transcriptionComplete', (data) => {
       setTranscriptionBubbles(prev => 
@@ -97,7 +121,6 @@ function InputApp() {
             : bubble
         )
       )
-      setIsProcessing(false)
     })
 
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
@@ -129,7 +152,6 @@ function InputApp() {
 
     recognitionRef.current.onstart = () => {
       setIsTranslating(true)
-      setIsProcessing(true)
     }
 
     recognitionRef.current.onresult = (event) => {
@@ -175,7 +197,6 @@ function InputApp() {
                 : bubble
             )
           )
-          setIsProcessing(false)
         }, 2000)
       } else {
         setCurrentTranscription(interimTranscript)
@@ -185,12 +206,10 @@ function InputApp() {
     recognitionRef.current.onerror = (event) => {
       console.error('Speech recognition error:', event.error)
       setIsTranslating(false)
-      setIsProcessing(false)
     }
 
     recognitionRef.current.onend = () => {
       setIsTranslating(false)
-      setIsProcessing(false)
     }
 
     return () => {
@@ -203,11 +222,51 @@ function InputApp() {
     }
   }, [sourceLanguage])
 
+  const downloadQRCode = () => {
+    if (qrCodeRef.current) {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const svg = qrCodeRef.current.querySelector('svg')
+      
+      if (svg && ctx) {
+        canvas.width = 200
+        canvas.height = 200
+        
+        const svgData = new XMLSerializer().serializeToString(svg)
+        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+        const svgUrl = URL.createObjectURL(svgBlob)
+        
+        const img = new Image()
+        img.onload = () => {
+          ctx.fillStyle = 'white'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+          
+          canvas.toBlob((blob) => {
+            if (blob) {
+              const url = URL.createObjectURL(blob)
+              const link = document.createElement('a')
+              link.href = url
+              link.download = 'scribe-translation-qr.png'
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
+              URL.revokeObjectURL(url)
+            }
+          })
+          
+          URL.revokeObjectURL(svgUrl)
+        }
+        img.src = svgUrl
+      }
+    }
+  }
+
   return (
     <MainContainer>
       <LeftPanel elevation={3}>
         <Typography variant="appTitle">Scribe</Typography>
-        
         <ConnectionDisplay>
           <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -236,13 +295,11 @@ function InputApp() {
             )}
           </div>
         </ConnectionDisplay>
-
         <LanguageSelector
           label="Source Language"
           selectedLanguage={sourceLanguage}
           onLanguageChange={setSourceLanguage}
         />
-
         <Button
           variant="contained"
           color="primary"
@@ -264,8 +321,34 @@ function InputApp() {
         >
           {isTranslating ? 'Translating...' : 'Translate'}
         </Button>
+        <QRCodeSection>
+          <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
+            Audience Access
+          </Typography>
+          <Typography variant="captionText" sx={{ textAlign: 'center' }}>
+            Share this QR code with your audience
+          </Typography>
+          <QRCodeContainer ref={qrCodeRef}>
+            <QRCode
+              value={CONFIG.TRANSLATION_URL}
+              size={120}
+              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+            />
+          </QRCodeContainer>
+          <Typography variant="captionText" sx={{ textAlign: 'center', fontSize: '0.75rem' }}>
+            <a href={CONFIG.TRANSLATION_URL} target="_blank" rel="noopener noreferrer">{CONFIG.TRANSLATION_URL}</a>
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={downloadQRCode}
+            sx={{ marginTop: '0.5rem' }}
+          >
+            Download QR Code
+          </Button>
+        </QRCodeSection>
       </LeftPanel>
-
       <RightPanel elevation={3}>
         <BubblesContainer>
           {currentTranscription && (

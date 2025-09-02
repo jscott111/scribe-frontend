@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { LanguageCode, getLanguageInfo, getLanguageFlag, getLanguageName, getSupportedLanguages } from '../enums/azureLangs'
+import styled from 'styled-components'
+import { MenuItem, Select } from '@mui/material'
 
 interface LanguageSelectorProps {
   label: string
@@ -20,36 +22,35 @@ const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   }
 
   return (
-    <div className="language-selector">
-      <label className="language-label">{label}</label>
-      <div className="language-dropdown">
-        <button
-          className="language-button"
-          onClick={() => setIsOpen(!isOpen)}
-          type="button"
-        >
-          <span className="language-flag">{getLanguageFlag(selectedLanguage)}</span>
-          <span className="language-name">{getLanguageName(selectedLanguage)}</span>
-          <span className="dropdown-arrow">▼</span>
-        </button>
-        
-        {isOpen && (
-          <div className="language-options">
-            {getSupportedLanguages().map((language) => (
-              <button
-                key={language.code}
-                className={`language-option ${selectedLanguage === language.code ? 'selected' : ''}`}
-                onClick={() => handleLanguageSelect(language.code as LanguageCode)}
-                type="button"
-              >
-                <span className="language-flag">{language.flag}</span>
-                <span className="language-name">{language.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    <Select
+      value={selectedLanguage}
+      onChange={(e) => handleLanguageSelect(e.target.value as LanguageCode)}
+      open={isOpen}
+      onOpen={() => setIsOpen(true)}
+      onClose={() => setIsOpen(false)}
+      label={label}
+      sx={{ 
+        width: '100%',
+        maxWidth: '300px',
+        minWidth: '200px',
+        '& .MuiOutlinedInput-root': {
+          borderRadius: '1rem',
+          fontSize: '1.1rem',
+        },
+        '& .MuiSelect-select': {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }
+      }}
+    >
+      {getSupportedLanguages().map((language) => (
+        <MenuItem key={language.code} value={language.code} sx={{ fontSize: '1rem' }}>
+          <span style={{ marginRight: '0.5rem' }}>{language.flag}</span>
+          {language.name}
+        </MenuItem>
+      ))}
+    </Select>
   )
 }
 

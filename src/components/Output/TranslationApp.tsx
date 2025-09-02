@@ -1,46 +1,125 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
-import { Paper, Chip } from '@mui/material'
+import { Paper, Chip, Button, Box, useMediaQuery, useTheme } from '@mui/material'
 import LanguageSelector from '../LanguageSelector'
-import { LanguageCode } from '../../enums/azureLangs'
+import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
+import { CONFIG } from '../../config/urls'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 
-const MainContainer = styled.div`
-  display: flex;
-  height: 100vh;
-  width: 100vw;
-  padding: 0;
-  margin: 0;
-  gap: 8px;
-`
-
-const PaperCards = styled(Paper)`
+const LandingPageContainer = styled.div`
   display: flex;
   flex-direction: column;
-  flex: 1;
-  padding: 1rem;
-  margin: 1rem;
-  border-radius: 2rem;
-  height: calc(100% - 2rem);
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 2rem;
+  gap: 3rem;
 `
 
-const LeftPanel = styled(PaperCards)`
+const LandingCard = styled(Paper)`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4rem 3rem;
+  border-radius: 2rem;
+  max-width: 95%;
+  width: 30rem;
+  max-height: 90%;
+  height: 40rem;
+  gap: 2.5rem;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border-radius: 2rem!important;
+`
+
+const LanguageSelectionSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+`
+
+const StartButton = styled(Button)`
+  padding: 1rem 3rem;
+  border-radius: 2rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  text-transform: none;
+  min-width: 200px;
+`
+
+const MainContainer = styled.div<{ isMobile: boolean }>`
+  display: flex;
+  flex-direction: ${props => props.isMobile ? 'column' : 'row'};
+  height: ${props => props.isMobile ? 'calc(100vh - 2rem)' : '100%'};
+  width: ${props => props.isMobile ? 'calc(100vw - 2rem)' : '100%'};
+  padding: ${props => props.isMobile ? '0.5rem' : '0'};
+  margin: 0;
+  gap: ${props => props.isMobile ? '0.5rem' : '8px'};
+  box-sizing: border-box;
+`
+
+const MobileHeader = styled(Paper)`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  margin: 0;
+  border-radius: 1rem !important;
+  min-height: 5rem;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+`
+
+const MobileHeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+`
+
+const MobileHeaderRight = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`
+
+const LeftPanel = styled(Paper)`
   max-width: 30%;
   min-width: 20%;
-  border-radius: 2rem!important;
+  border-radius: 2rem !important;
   margin: 1rem;
   margin-right: 0.5rem;
   padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  height: calc(100% - 2rem);
 `
 
-const RightPanel = styled(PaperCards)`
-  flex: 1 1 70%;
-  max-width: 80%;
-  min-width: 70%;
-  border-radius: 1rem!important;
-  margin: 1rem;
-  margin-left: 0.5rem;
+const RightPanel = styled(Paper)<{ isMobile: boolean }>`
+  ${props => props.isMobile ? `
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border-radius: 1rem !important;
+  ` : `
+    flex: 1 1 70%;
+    max-width: 80%;
+    min-width: 70%;
+    height: calc(100% - 2rem);
+    border-radius: 2rem !important;
+    margin: 1rem;
+    margin-left: 0.5rem;
+  `}
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
 `
 
 const MessageBubble = styled(Paper)`
@@ -55,9 +134,11 @@ const BubblesContainer = styled.div`
   display: flex;
   flex-direction: column-reverse;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
   padding: 1rem 0;
   gap: 0.5rem;
+  box-sizing: border-box;
 `
 
 const EmptyState = styled.div`
@@ -71,12 +152,12 @@ const EmptyState = styled.div`
   padding: 2rem;
 `
 
-const HeaderSection = styled.div`
+const HeaderSection = styled.div<{ isMobile: boolean }>`
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  margin-top: 4rem;
+  margin-top: ${props => props.isMobile ? '1rem' : '4rem'};
   margin-bottom: 2rem;
 `
 
@@ -87,11 +168,20 @@ const ConnectionStatusContainer = styled.div`
   margin-bottom: 1rem;
 `
 
-const RightPanelContent = styled.div`
+const RightPanelContent = styled.div<{ isMobile: boolean }>`
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem;
+  padding: ${props => props.isMobile ? '1rem' : '1rem'};
+  box-sizing: border-box;
+  overflow: hidden;
+`
+
+const BackButton = styled(Button)`
+  margin-bottom: 1rem;
+  border-radius: 2rem;
+  text-transform: none;
+  align-self: flex-start;
 `
 
 interface TranslationBubble {
@@ -105,14 +195,19 @@ interface TranslationBubble {
 }
 
 function TranslationApp() {
-  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(LanguageCode.ES)
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(LanguageCode.FR)
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [showLanguageSelection, setShowLanguageSelection] = useState(true)
   
   const socketRef = useRef<Socket | null>(null)
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
   useEffect(() => {
-    socketRef.current = io('http://localhost:3001')
+    if (!targetLanguage) return
+
+    socketRef.current = io(CONFIG.BACKEND_URL)
     
     socketRef.current.on('connect', () => {
       console.log('🔌 Translation Client connected to backend')
@@ -175,14 +270,14 @@ function TranslationApp() {
   }, [targetLanguage])
 
   useEffect(() => {
-    if (socketRef.current && isConnected) {
+    if (socketRef.current && isConnected && targetLanguage) {
       socketRef.current.emit('setTargetLanguage', { targetLanguage })
     }
   }, [targetLanguage, isConnected])
 
   const translateText = async (text: string, fromLang: LanguageCode, toLang: LanguageCode): Promise<string> => {
     try {
-      const response = await fetch('http://localhost:3001/api/translate', {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/api/translate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -206,20 +301,122 @@ function TranslationApp() {
     }
   }
 
+  const handleBackToLanguageSelection = () => {
+    setShowLanguageSelection(true)
+    setTargetLanguage(LanguageCode.FR)
+    setTranslationBubbles([])
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+    }
+  }
+
+  if (showLanguageSelection) {
+    return (
+      <LandingPageContainer>
+        <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
+          <Typography variant="appTitle" sx={{ fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '1rem' }}>
+            Scribe
+          </Typography>
+          
+          <Typography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
+            Real-time Translation
+          </Typography>
+          
+          <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary' }}>
+            Choose your preferred language to receive live translations from the speaker
+          </Typography>
+          
+          <LanguageSelectionSection>
+            <Typography variant="subsectionHeader" sx={{ textAlign: 'center', marginTop: '1rem' }}>
+              Select Target Language
+            </Typography>
+            
+            <LanguageSelector
+              label="Language"
+              selectedLanguage={targetLanguage || LanguageCode.EN}
+              onLanguageChange={setTargetLanguage}
+            />
+            
+            <StartButton
+              variant="contained"
+              color="primary"
+              onClick={() => {
+                if (targetLanguage) {
+                  setShowLanguageSelection(false)
+                }
+              }}
+              disabled={!targetLanguage}
+              sx={{
+                marginTop: '1rem',
+                '&:disabled': {
+                  opacity: 0.5,
+                },
+              }}
+            >
+              Start Listening
+            </StartButton>
+          </LanguageSelectionSection>
+        </LandingCard>
+      </LandingPageContainer>
+    )
+  }
+
   return (
-    <MainContainer>
-      <LeftPanel elevation={3}>
-        <Typography variant="appTitle">Scribe</Typography>
+    <MainContainer isMobile={isMobile}>
+      {isMobile ? (
+        <MobileHeader elevation={3}>
+          <MobileHeaderLeft>
+            <BackButton
+              variant="outlined"
+              color="primary"
+              startIcon={<ArrowBackIcon />}
+              onClick={handleBackToLanguageSelection}
+              size="small"
+              sx={{
+                borderRadius: '1rem',
+                minWidth: 'auto',
+                padding: '0.5rem 1rem'
+              }}
+            >
+              Back
+            </BackButton>
+            <Typography variant="subsectionHeader" sx={{ fontSize: '1rem', fontWeight: '600' }}>
+              {getLanguageInfo(targetLanguage).name} {getLanguageInfo(targetLanguage).flag}
+            </Typography>
+          </MobileHeaderLeft>
+          
+          <MobileHeaderRight>
+            <Chip
+              label={isConnected ? 'Connected' : 'Disconnected'}
+              color={isConnected ? 'success' : 'error'}
+              variant="outlined"
+              size="small"
+            />
+          </MobileHeaderRight>
+        </MobileHeader>
+      ) : (
+        // Desktop Left Panel
+        <LeftPanel elevation={3}>
+          <BackButton
+            variant="outlined"
+            color="primary"
+            startIcon={<ArrowBackIcon />}
+            onClick={handleBackToLanguageSelection}
+            sx={{
+              borderRadius: '2rem',
+              marginBottom: '1rem'
+            }}
+          >
+            Change Language
+          </BackButton>
 
-        <LanguageSelector
-          label="Target Language"
-          selectedLanguage={targetLanguage}
-          onLanguageChange={setTargetLanguage}
-        />
-      </LeftPanel>
+          <HeaderSection isMobile={isMobile}>
+            <Typography variant="appTitle">Scribe</Typography>
+            <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
+              Translating to {getLanguageInfo(targetLanguage).name} {getLanguageInfo(targetLanguage).flag}
+            </Typography>
+          </HeaderSection>
 
-      <RightPanel elevation={3}>
-        <RightPanelContent>
           <ConnectionStatusContainer>
             <Chip
               label={isConnected ? 'Connected' : 'Disconnected'}
@@ -227,11 +424,20 @@ function TranslationApp() {
               variant="outlined"
             />
           </ConnectionStatusContainer>
+        </LeftPanel>
+      )}
 
+      <RightPanel elevation={3} isMobile={isMobile}>
+        <RightPanelContent isMobile={isMobile}>
           <BubblesContainer>
             {translationBubbles.length === 0 ? (
               <EmptyState>
-                <Typography variant="sectionHeader" sx={{ marginBottom: '0.5rem' }}>Waiting for translation...</Typography>
+                <Typography variant="sectionHeader" sx={{ marginBottom: '0.5rem' }}>
+                  Waiting for translation...
+                </Typography>
+                <Typography variant="bodyText" sx={{ color: 'text.secondary' }}>
+                  Translations will appear here when the speaker starts talking
+                </Typography>
               </EmptyState>
             ) : (
               translationBubbles.slice().reverse().map((bubble) => (
