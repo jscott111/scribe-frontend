@@ -112,7 +112,7 @@ function InputApp() {
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
-  const { user, tokens, logout } = useAuth()
+  const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, generateSessionId, setSessionId, forceNewSessionId } = useSession()
 
   // Generate session ID immediately when component mounts
@@ -131,24 +131,21 @@ function InputApp() {
   }, [sessionId, generateSessionId, forceNewSessionId]) // Include dependencies
 
   useEffect(() => {
-    if (!tokens) return
-
-    // Use existing session ID
-    const currentSessionId = sessionId
-    if (currentSessionId) {
-      console.log('🔗 InputApp using session ID:', currentSessionId)
-    } else {
-      console.log('🔗 InputApp: No session ID available yet')
+    if (!tokens || !sessionId) {
       return
     }
 
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
         token: tokens.accessToken,
-        sessionId: currentSessionId
+        sessionId: sessionId
       }
     })
     
+    socketRef.current.on('connect', () => {
+      socketRef.current?.emit('getConnectionCount')
+    })
+
     socketRef.current.on('transcriptionComplete', (data) => {
       setTranscriptionBubbles(prev => 
         prev.map(bubble => 
@@ -163,18 +160,55 @@ function InputApp() {
       setConnectionCount(data)
     })
 
-    socketRef.current.emit('getConnectionCount')
+    socketRef.current.on('disconnect', () => {
+      console.log('🔌 Socket disconnected')
+    })
+
+    socketRef.current.on('connect_error', (error) => {
+      console.error('❌ Connection error:', error)
+    })
+
+    socketRef.current.on('error', (error) => {
+      console.error('❌ Socket error:', error)
+    })
+
+    // Handle token expiration
+    socketRef.current.on('tokenExpired', (data) => {
+      if (tokens.refreshToken) {
+        socketRef.current?.emit('refreshToken', {
+          refreshToken: tokens.refreshToken
+        })
+      }
+    })
+
+    // Handle successful token refresh
+    socketRef.current.on('tokenRefreshed', (data) => {
+      if (updateTokens) {
+        updateTokens({
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken
+        })
+      }
+    })
+
+    // Handle token refresh error
+    socketRef.current.on('tokenRefreshError', (data) => {
+      console.error('❌ Token refresh failed:', data)
+      if (logout) {
+        logout()
+      }
+    })
 
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect()
       }
     }
-  }, [])
+  }, [tokens, sessionId]) // Include dependencies
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition not supported in this browser')
+      console.error('❌ Speech recognition not supported')
       return
     }
 
@@ -194,12 +228,16 @@ function InputApp() {
       let finalTranscript = ''
       let interimTranscript = ''
 
+      console.log('🎤 Speech recognition result:', event.results.length, 'results')
+
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
           finalTranscript += transcript
+          console.log('🎤 Final transcript:', transcript)
         } else {
           interimTranscript += transcript
+          console.log('🎤 Interim transcript:', transcript)
         }
       }
 
@@ -220,6 +258,8 @@ function InputApp() {
             sourceLanguage,
             bubbleId: newBubble.id
           })
+        } else {
+          console.error('❌ Socket not connected, cannot emit transcription')
         }
         
         if (timeoutRef.current) {
@@ -364,10 +404,12 @@ function InputApp() {
           }}
           onClick={() => {
             if (isTranslating) {
+              console.log('🎤 Stopping speech recognition')
               if (recognitionRef.current) {
                 recognitionRef.current.stop()
               }
             } else {
+              console.log('🎤 Starting speech recognition')
               if (recognitionRef.current) {
                 recognitionRef.current.start()
               }

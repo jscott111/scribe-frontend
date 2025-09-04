@@ -238,55 +238,44 @@ function TranslationApp() {
     })
     
     socketRef.current.on('connect', () => {
-      console.log('🔌 Translation Client connected to backend')
       setIsConnected(true)
       socketRef.current?.emit('setTargetLanguage', { targetLanguage })
     })
     
     socketRef.current.on('disconnect', () => {
-      console.log('🔌 Translation Client disconnected from backend')
       setIsConnected(false)
     })
     
-    socketRef.current.on('transcription', async (data) => {
-      console.log('📝 Received transcription:', data)
-      
+    socketRef.current.on('translationComplete', (data) => {
       const newBubble: TranslationBubble = {
         id: data.bubbleId || Date.now().toString(),
         originalText: data.originalText || 'Unknown',
-        translatedText: 'Translating...',
+        translatedText: data.translatedText || 'Translation failed',
         sourceLanguage: data.sourceLanguage,
-        targetLanguage: targetLanguage,
-        timestamp: new Date(data.timestamp || Date.now()),
-        isComplete: false
+        targetLanguage: data.targetLanguage,
+        timestamp: new Date(),
+        isComplete: true
       }
       
       setTranslationBubbles(prev => [...prev, newBubble])
-      
-      try {
-        const translatedText = await translateText(data.originalText, data.sourceLanguage, targetLanguage)
-        
-        setTranslationBubbles(prev => 
-          prev.map(bubble => 
-            bubble.id === newBubble.id 
-              ? { ...bubble, translatedText, isComplete: true }
-              : bubble
-          )
-        )
-      } catch (error) {
-        console.error('Translation error:', error)
-        setTranslationBubbles(prev => 
-          prev.map(bubble => 
-            bubble.id === newBubble.id 
-              ? { ...bubble, translatedText: 'Translation failed', isComplete: true }
-              : bubble
-          )
-        )
+    })
+    
+    socketRef.current.on('translationError', (data) => {
+      const newBubble: TranslationBubble = {
+        id: data.bubbleId || Date.now().toString(),
+        originalText: 'Unknown',
+        translatedText: 'Translation failed',
+        sourceLanguage: 'en',
+        targetLanguage: targetLanguage,
+        timestamp: new Date(),
+        isComplete: true
       }
+      
+      setTranslationBubbles(prev => [...prev, newBubble])
     })
     
     socketRef.current.on('connect_error', (error) => {
-      console.error('Socket.IO connection error:', error)
+      console.error('❌ Connection error:', error)
       setIsConnected(false)
     })
 
@@ -303,31 +292,6 @@ function TranslationApp() {
     }
   }, [targetLanguage, isConnected])
 
-  const translateText = async (text: string, fromLang: LanguageCode, toLang: LanguageCode): Promise<string> => {
-    try {
-      const response = await fetch(`${CONFIG.BACKEND_URL}/api/translate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text,
-          from: fromLang,
-          to: toLang
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`Translation failed: ${response.statusText}`)
-      }
-
-      const data = await response.json()
-      return data.translatedText
-    } catch (error) {
-      console.error('Translation error:', error)
-      throw error
-    }
-  }
 
   const handleBackToLanguageSelection = () => {
     setShowLanguageSelection(true)
