@@ -239,7 +239,7 @@ function TranslationApp() {
     
     socketRef.current.on('connect', () => {
       setIsConnected(true)
-      socketRef.current?.emit('setTargetLanguage', { targetLanguage })
+      // Don't set target language until user clicks "Start Listening"
     })
     
     socketRef.current.on('disconnect', () => {
@@ -287,10 +287,10 @@ function TranslationApp() {
   }, [targetLanguage, sessionId])
 
   useEffect(() => {
-    if (socketRef.current && isConnected && targetLanguage) {
+    if (socketRef.current && isConnected && targetLanguage && !showLanguageSelection) {
       socketRef.current.emit('setTargetLanguage', { targetLanguage })
     }
-  }, [targetLanguage, isConnected])
+  }, [targetLanguage, isConnected, showLanguageSelection])
 
 
   const handleBackToLanguageSelection = () => {
@@ -358,6 +358,8 @@ function TranslationApp() {
               color="primary"
               onClick={() => {
                 if (targetLanguage) {
+                  // Set the target language on the server when user starts listening
+                  socketRef.current?.emit('setTargetLanguage', { targetLanguage })
                   setShowLanguageSelection(false)
                 }
               }}
