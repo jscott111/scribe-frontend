@@ -5,15 +5,16 @@
   "type": "module",
   "description": "Frontend for Scribe - Real-time audio translation app",
   "scripts": {
-    "dev": "./start-dual-clients.sh",
-    "dev:input": "vite --port 5173 --open",
-    "dev:translation": "vite --port 5174 --open",
+    "dev": "VITE_NODE_ENV=dev ./start-dual-clients.sh",
+    "dev:input": "VITE_NODE_ENV=dev vite --port 5173 --open",
+    "dev:translation": "VITE_NODE_ENV=dev vite --port 5174 --open",
+    "staging": "VITE_NODE_ENV=staging vite build",
+    "build": "VITE_NODE_ENV=prod vite build",
+    "preview": "vite preview",
     "kill": "pkill -f 'node'",
     "kill:input": "pkill -f 'vite --port 5173 --open'",
     "kill:translation": "pkill -f 'vite --port 5174 --open'",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
