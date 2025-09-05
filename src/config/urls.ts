@@ -1,11 +1,31 @@
 // Configuration for application URLs
-export const CONFIG = {
-  // Translation Client URL - where audience members go to see translations
-  TRANSLATION_URL: 'http://127.0.0.1:5174',
+const getConfig = () => {
+  const isDevelopment = import.meta.env.VITE_NODE_ENV === 'dev'
+  const isStaging = import.meta.env.VITE_NODE_ENV === 'staging'
+  const isProduction = import.meta.env.VITE_NODE_ENV === 'prod'
   
-  // Input Client URL - where the speaker goes to input speech
-  INPUT_URL: 'http://127.0.0.1:5173',
-  
-  // Backend URL - where the API and WebSocket server runs
-  BACKEND_URL: 'http://127.0.0.1:3001'
+  if (isDevelopment) {
+    return {
+      // Development URLs with subdomains (same port)
+      TRANSLATION_URL: 'http://listener.localhost:5173',
+      INPUT_URL: 'http://speaker.localhost:5173',
+      BACKEND_URL: 'http://api.localhost:3001'
+    }
+  } else if (isStaging) {
+    return {
+      // Staging URLs (replace with your actual staging domain)
+      TRANSLATION_URL: 'https://listener-staging.yourdomain.com',
+      INPUT_URL: 'https://speaker-staging.yourdomain.com',
+      BACKEND_URL: 'https://api-staging.yourdomain.com'
+    }
+  } else {
+    // Production URLs (replace with your actual production domain)
+    return {
+      TRANSLATION_URL: 'https://listener.yourdomain.com',
+      INPUT_URL: 'https://speaker.yourdomain.com',
+      BACKEND_URL: 'https://api.yourdomain.com'
+    }
+  }
 }
+
+export const CONFIG = getConfig()
