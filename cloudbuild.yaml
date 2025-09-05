@@ -1,20 +1,14 @@
 steps:
   # Build the React application
-  - name: 'node:18'
+  - name: 'node:20'
     entrypoint: 'npm'
     args: ['ci']
     dir: '.'
 
   # Build for production
-  - name: 'node:18'
+  - name: 'node:20'
     entrypoint: 'npm'
     args: ['run', 'build']
-    dir: '.'
-
-  # Serve with a simple HTTP server
-  - name: 'node:18'
-    entrypoint: 'npx'
-    args: ['http-server', 'dist', '-p', '8080', '-a', '0.0.0.0']
     dir: '.'
 
   # Build container image
@@ -42,11 +36,13 @@ steps:
       - '--port'
       - '8080'
       - '--memory'
-      - '256Mi'
+      - '512Mi'
       - '--cpu'
       - '1'
       - '--max-instances'
-      - '20'
+      - '50'
+      - '--set-env-vars'
+      - 'NODE_ENV=production'
 
 # Store images
 images:

@@ -12,17 +12,19 @@ import theme from './theme/theme'
 import './index.css'
 
 const getAppComponent = () => {
-  const port = window.location.port
+  const hostname = window.location.hostname
+  const subdomain = hostname.split('.')[0]
   
-  if (port === '5173') {
+  if (subdomain === 'speaker') {
     return (
       <ProtectedRoute fallback={<AuthPage />}>
         <InputApp />
       </ProtectedRoute>
     )
-  } else {
-    // Translation app doesn't need authentication, just session connection
+  } else if (subdomain === 'listener') {
     return <TranslationApp />
+  } else {
+    return (<>404 - Not Found</>)
   }
 }
 
