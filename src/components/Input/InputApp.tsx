@@ -151,6 +151,7 @@ function InputApp() {
   const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
   const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
   const [isTranslating, setIsTranslating] = useState(false)
+  const [shouldBeListening, setShouldBeListening] = useState(false)
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
@@ -181,7 +182,16 @@ function InputApp() {
 
   useEffect(() => {
     if (!tokens || !sessionId) {
+      console.log('🔌 Socket: Missing tokens or sessionId, not connecting')
       return
+    }
+
+    console.log('🔌 Socket: Connecting to', CONFIG.BACKEND_URL, 'with sessionId:', sessionId)
+
+    // Clean up existing socket
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
     }
 
     socketRef.current = io(CONFIG.BACKEND_URL, {
@@ -192,10 +202,24 @@ function InputApp() {
     })
     
     socketRef.current.on('connect', () => {
+      console.log('🔌 Socket connected successfully')
       socketRef.current?.emit('getConnectionCount')
+      
+      // Set up periodic connection count refresh
+      const intervalId = setInterval(() => {
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('getConnectionCount')
+        } else {
+          clearInterval(intervalId)
+        }
+      }, 5000) // Refresh every 5 seconds
+      
+      // Store interval ID for cleanup
+      ;(socketRef.current as any).connectionCountInterval = intervalId
     })
 
     socketRef.current.on('transcriptionComplete', (data) => {
+      console.log('🔌 Received transcriptionComplete:', data)
       setTranscriptionBubbles(prev => 
         prev.map(bubble => 
           bubble.id === data.bubbleId 
@@ -206,15 +230,16 @@ function InputApp() {
     })
 
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
+      console.log('🔌 Received connectionCount:', data)
       setConnectionCount(data)
     })
 
-    socketRef.current.on('disconnect', () => {
-      console.log('🔌 Socket disconnected')
+    socketRef.current.on('disconnect', (reason) => {
+      console.log('🔌 Socket disconnected:', reason)
     })
 
     socketRef.current.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error)
+      console.error('❌ Socket connection error:', error)
     })
 
     socketRef.current.on('error', (error) => {
@@ -223,6 +248,7 @@ function InputApp() {
 
     // Handle token expiration
     socketRef.current.on('tokenExpired', (data) => {
+      console.log('🔌 Token expired, attempting refresh')
       if (tokens.refreshToken) {
         socketRef.current?.emit('refreshToken', {
           refreshToken: tokens.refreshToken
@@ -232,6 +258,7 @@ function InputApp() {
 
     // Handle successful token refresh
     socketRef.current.on('tokenRefreshed', (data) => {
+      console.log('🔌 Token refreshed successfully')
       if (updateTokens) {
         updateTokens({
           accessToken: data.accessToken,
@@ -250,7 +277,13 @@ function InputApp() {
 
     return () => {
       if (socketRef.current) {
+        console.log('🔌 Cleaning up socket connection')
+        // Clear the connection count interval
+        if ((socketRef.current as any).connectionCountInterval) {
+          clearInterval((socketRef.current as any).connectionCountInterval)
+        }
         socketRef.current.disconnect()
+        socketRef.current = null
       }
     }
   }, [tokens, sessionId]) // Include dependencies
@@ -259,6 +292,12 @@ function InputApp() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       console.error('❌ Speech recognition not supported')
       return
+    }
+
+    // Clean up existing recognition instance
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
     }
 
     const SpeechRecognitionClass =
@@ -270,7 +309,9 @@ function InputApp() {
     recognitionRef.current.lang = sourceLanguage
 
     recognitionRef.current.onstart = () => {
+      console.log('🎤 Speech recognition started')
       setIsTranslating(true)
+      setShouldBeListening(true)
     }
 
     recognitionRef.current.onresult = (event) => {
@@ -290,20 +331,22 @@ function InputApp() {
         }
       }
 
-      if (finalTranscript) {
+      if (finalTranscript.trim()) {
         const newBubble: MessageBubble = {
-          id: Date.now().toString(),
-          text: finalTranscript,
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          text: finalTranscript.trim(),
           timestamp: new Date(),
           isComplete: false
         }
         
+        console.log('🎤 Creating new bubble:', newBubble)
         setTranscriptionBubbles(prev => [...prev, newBubble])
         setCurrentTranscription('')
         
         if (socketRef.current && socketRef.current.connected) {
+          console.log('🎤 Emitting transcription to socket')
           socketRef.current.emit('speechTranscription', {
-            transcription: finalTranscript,
+            transcription: finalTranscript.trim(),
             sourceLanguage,
             bubbleId: newBubble.id
           })
@@ -315,6 +358,7 @@ function InputApp() {
           clearTimeout(timeoutRef.current)
         }
         timeoutRef.current = setTimeout(() => {
+          console.log('🎤 Marking bubble as complete:', newBubble.id)
           setTranscriptionBubbles((prev) =>
             prev.map((bubble) =>
               bubble.id === newBubble.id
@@ -323,26 +367,58 @@ function InputApp() {
             )
           )
         }, 2000)
-      } else {
-        setCurrentTranscription(interimTranscript)
+      } else if (interimTranscript.trim()) {
+        // Only update current transcription, don't create new bubbles
+        setCurrentTranscription(interimTranscript.trim())
       }
     }
 
     recognitionRef.current.onerror = (event) => {
-      console.error('Speech recognition error:', event.error)
+      console.error('🎤 Speech recognition error:', event.error)
       setIsTranslating(false)
+      
+      // On mobile, some errors are recoverable - try to restart after a short delay
+      if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
+        console.log('🎤 Attempting to restart speech recognition after error')
+        setTimeout(() => {
+          if (recognitionRef.current && shouldBeListening && !isTranslating) {
+            try {
+              recognitionRef.current.start()
+            } catch (err) {
+              console.error('🎤 Failed to restart speech recognition:', err)
+            }
+          }
+        }, 1000)
+      }
     }
 
     recognitionRef.current.onend = () => {
+      console.log('🎤 Speech recognition ended')
       setIsTranslating(false)
+      
+      // On mobile, speech recognition often ends automatically - restart if we were supposed to be listening
+      if (shouldBeListening) {
+        console.log('🎤 Speech recognition ended unexpectedly, attempting restart')
+        setTimeout(() => {
+          if (recognitionRef.current && shouldBeListening && !isTranslating) {
+            try {
+              recognitionRef.current.start()
+            } catch (err) {
+              console.error('🎤 Failed to restart speech recognition after end:', err)
+            }
+          }
+        }, 100)
+      }
     }
 
     return () => {
       if (recognitionRef.current) {
         recognitionRef.current.stop()
+        recognitionRef.current = null
       }
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
       }
     }
   }, [sourceLanguage, tokens, sessionId])
@@ -491,11 +567,13 @@ function InputApp() {
             onClick={() => {
               if (isTranslating) {
                 console.log('🎤 Stopping speech recognition')
+                setShouldBeListening(false)
                 if (recognitionRef.current) {
                   recognitionRef.current.stop()
                 }
               } else {
                 console.log('🎤 Starting speech recognition')
+                setShouldBeListening(true)
                 if (recognitionRef.current) {
                   recognitionRef.current.start()
                 }
@@ -599,11 +677,13 @@ function InputApp() {
                 onClick={() => {
                   if (isTranslating) {
                     console.log('🎤 Stopping speech recognition')
+                    setShouldBeListening(false)
                     if (recognitionRef.current) {
                       recognitionRef.current.stop()
                     }
                   } else {
                     console.log('🎤 Starting speech recognition')
+                    setShouldBeListening(true)
                     if (recognitionRef.current) {
                       recognitionRef.current.start()
                     }
