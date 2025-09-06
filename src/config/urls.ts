@@ -13,17 +13,17 @@ const getConfig = () => {
     }
   } else if (isStaging) {
     return {
-      // Staging URLs (replace with your actual staging domain)
-      TRANSLATION_URL: 'https://listener-staging.yourdomain.com',
-      INPUT_URL: 'https://speaker-staging.yourdomain.com',
-      BACKEND_URL: 'https://api-staging.yourdomain.com'
+      // Staging URLs - use environment variables if available, otherwise defaults
+      TRANSLATION_URL: import.meta.env.VITE_TRANSLATION_URL || 'https://listener-staging.scribe-ai.ca',
+      INPUT_URL: import.meta.env.VITE_INPUT_URL || 'https://speaker-staging.scribe-ai.ca',
+      BACKEND_URL: import.meta.env.VITE_BACKEND_URL || 'https://api-staging.scribe-ai.ca'
     }
   } else {
-    // Production URLs (replace with your actual production domain)
+    // Production URLs - use environment variables if available, otherwise defaults
     return {
-      TRANSLATION_URL: 'https://listener.yourdomain.com',
-      INPUT_URL: 'https://speaker.yourdomain.com',
-      BACKEND_URL: 'https://api.yourdomain.com'
+      TRANSLATION_URL: import.meta.env.VITE_TRANSLATION_URL || 'https://listener.scribe-ai.ca',
+      INPUT_URL: import.meta.env.VITE_INPUT_URL || 'https://speaker.scribe-ai.ca',
+      BACKEND_URL: import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'
     }
   }
 }

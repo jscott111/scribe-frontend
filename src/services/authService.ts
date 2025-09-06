@@ -1,6 +1,6 @@
 import { AuthTokens } from '../contexts/AuthContext'
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'
 
 export interface LoginRequest {
   email: string
