@@ -16,6 +16,8 @@ interface AudioRecorderProps {
   targetLanguage: LanguageCode
   onTranslation: (text: string) => void
   setIsProcessing: (processing: boolean) => void
+  accessToken?: string
+  sessionId?: string
 }
 
 const AudioRecorder: React.FC<AudioRecorderProps> = ({
@@ -24,7 +26,9 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   sourceLanguage,
   targetLanguage,
   onTranslation,
-  setIsProcessing
+  setIsProcessing,
+  accessToken,
+  sessionId
 }) => {
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string>('')
@@ -33,8 +37,13 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   const recognitionRef = useRef<any>(null)
 
   useEffect(() => {
-    // Initialize WebSocket connection
-    socketRef.current = io('http://localhost:3001')
+    // Initialize WebSocket connection with authentication
+    socketRef.current = io(import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca', {
+      auth: {
+        token: accessToken,
+        sessionId: sessionId
+      }
+    })
     
     socketRef.current.on('connect', () => {
       setIsConnected(true)
