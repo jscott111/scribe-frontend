@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
-import { Paper, Chip, Button, Box, IconButton } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Modal, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
+import QrCodeIcon from '@mui/icons-material/QrCode'
 import QRCode from 'react-qr-code'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
@@ -20,47 +21,81 @@ interface MessageBubble {
   isComplete: boolean
 }
 
-const MainContainer = styled.div`
+const MainContainer = styled.div<{ isMobile: boolean }>`
   display: flex;
-  height: 100vh;
-  width: 100vw;
-  padding: 0;
+  flex-direction: ${props => props.isMobile ? 'column' : 'row'};
+  height: ${props => props.isMobile ? 'calc(100vh - 2rem)' : '100vh'};
+  width: ${props => props.isMobile ? 'calc(100vw - 2rem)' : '100vw'};
+  padding: ${props => props.isMobile ? '0.5rem' : '0'};
   margin: 0;
-  gap: 8px;
+  gap: ${props => props.isMobile ? '0.5rem' : '8px'};
+  box-sizing: border-box;
 `
 
-const PaperCards = styled(Paper)`
+const MobileHeader = styled(Paper)`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  margin: 0;
+  border-radius: 1rem !important;
+  min-height: 5rem;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+`
+
+const MobileHeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+`
+
+const MobileHeaderRight = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`
+
+const LeftPanel = styled(Paper)`
+  max-width: 30%;
+  min-width: 20%;
+  border-radius: 2rem !important;
+  margin: 1rem;
+  margin-right: 0.5rem;
+  padding: 2rem;
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 1rem;
-  margin: 1rem;
-  border-radius: 2rem;
   height: calc(100% - 2rem);
 `
 
-const LeftPanel = styled(PaperCards)`
-  max-width: 30%;
-  min-width: 20%;
-  border-radius: 2rem!important;
-  margin: 1rem;
-  margin-right: 0.5rem;
+const RightPanel = styled(Paper)<{ isMobile: boolean }>`
+  ${props => props.isMobile ? `
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    border-radius: 1rem !important;
+  ` : `
+    flex: 1 1 70%;
+    max-width: 80%;
+    min-width: 70%;
+    height: calc(100% - 2rem);
+    border-radius: 2rem !important;
+    margin: 1rem;
+    margin-left: 0.5rem;
+  `}
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
 `
 
-const RightPanel = styled(PaperCards)`
-  flex: 1 1 70%;
-  max-width: 80%;
-  min-width: 70%;
-  border-radius: 2rem!important;
-  margin: 1rem;
-  margin-left: 0.5rem;
-`
-
-const ConnectionDisplay = styled.div`
+const ConnectionDisplay = styled.div<{ isMobile: boolean }>`
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-top: 4rem;
+  margin-top: ${props => props.isMobile ? '1rem' : '4rem'};
   margin-bottom: 2rem;
 `
 
@@ -96,9 +131,20 @@ const BubblesContainer = styled.div`
   display: flex;
   flex-direction: column-reverse;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
   padding: 1rem 0;
   gap: 0.5rem;
+  box-sizing: border-box;
+`
+
+const RightPanelContent = styled.div<{ isMobile: boolean }>`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: ${props => props.isMobile ? '1rem' : '1rem'};
+  box-sizing: border-box;
+  overflow: hidden;
 `
 
 function InputApp() {
@@ -107,13 +153,16 @@ function InputApp() {
   const [isTranslating, setIsTranslating] = useState(false)
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
+  const [qrModalOpen, setQrModalOpen] = useState(false)
   
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null)
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, generateSessionId, setSessionId, forceNewSessionId } = useSession()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
   // Generate session ID immediately when component mounts
   useEffect(() => {
@@ -340,14 +389,52 @@ function InputApp() {
   }
 
   return (
-    <MainContainer>
-      <LeftPanel elevation={3}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <Typography variant="appTitle" sx={{ margin: 0 }}>Scribe</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>
-              {user?.name}
-            </Typography>
+    <MainContainer isMobile={isMobile}>
+      {isMobile ? (
+        <MobileHeader elevation={3}>
+          <MobileHeaderLeft>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <Typography variant="appTitle" sx={{ fontSize: '1.2rem', fontWeight: '600' }}>
+                Scribe
+              </Typography>
+              <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
+                {user?.name}
+              </Typography>
+            </Box>
+          </MobileHeaderLeft>
+          
+          <MobileHeaderRight>
+            <Chip
+              label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+              color="primary"
+              variant="outlined"
+              size="small"
+            />
+            <IconButton
+              onClick={logout}
+              color="primary"
+              size="small"
+              sx={{ 
+                borderRadius: '50%',
+                '&:hover': {
+                  backgroundColor: 'rgba(210, 180, 140, 0.1)'
+                }
+              }}
+            >
+              <LogoutIcon />
+            </IconButton>
+          </MobileHeaderRight>
+        </MobileHeader>
+      ) : (
+        // Desktop Left Panel
+        <LeftPanel elevation={3}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <Typography variant="appTitle" sx={{ margin: 0 }}>Scribe</Typography>
+              <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>
+                {user?.name}
+              </Typography>
+            </Box>
             <IconButton
               onClick={logout}
               color="primary"
@@ -361,92 +448,241 @@ function InputApp() {
               <LogoutIcon />
             </IconButton>
           </Box>
-        </Box>
-        <ConnectionDisplay>
-          <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <Chip
-              label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
-              color="primary"
+          <ConnectionDisplay isMobile={isMobile}>
+            <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <Chip
+                label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+                color="primary"
+                variant="outlined"
+                sx={{
+                  fontSize: '1rem',
+                  fontWeight: 'bold',
+                  width: '10rem'
+                }}
+              />
+              {Object.keys(connectionCount.byLanguage).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
+                    <Chip
+                      key={lang}
+                      label={`${getLanguageInfo(lang as LanguageCode).flag} ${count}`}
+                      size="small"
+                      variant="outlined"
+                      sx={{ fontSize: '0.75rem' }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </ConnectionDisplay>
+          <LanguageSelector
+            label="Source Language"
+            selectedLanguage={sourceLanguage}
+            onLanguageChange={setSourceLanguage}
+          />
+          <Button
+            variant="contained"
+            color="primary"
+            sx={{
+              borderRadius: '2rem',
+              marginTop: '2rem'
+            }}
+            onClick={() => {
+              if (isTranslating) {
+                console.log('🎤 Stopping speech recognition')
+                if (recognitionRef.current) {
+                  recognitionRef.current.stop()
+                }
+              } else {
+                console.log('🎤 Starting speech recognition')
+                if (recognitionRef.current) {
+                  recognitionRef.current.start()
+                }
+              }
+            }}
+          >
+            {isTranslating ? 'Translating...' : 'Translate'}
+          </Button>
+          <QRCodeSection>
+            <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
+              Audience Access
+            </Typography>
+            <Typography variant="captionText" sx={{ textAlign: 'center' }}>
+              Share this QR code with your audience
+            </Typography>
+            <QRCodeContainer ref={qrCodeRef}>
+              {sessionId ? (
+                <QRCode
+                  value={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`}
+                  size={120}
+                  style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                />
+              ) : (
+                <Box sx={{ 
+                  width: 120, 
+                  height: 120, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px'
+                }}>
+                  <Typography variant="captionText">Generating...</Typography>
+                </Box>
+              )}
+            </QRCodeContainer>
+            <Typography variant="captionText" sx={{ textAlign: 'center', fontSize: '0.75rem' }}>
+              {sessionId ? (
+                <a href={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`} target="_blank" rel="noopener noreferrer">
+                  {CONFIG.TRANSLATION_URL}?session={sessionId}
+                </a>
+              ) : (
+                'Generating session link...'
+              )}
+            </Typography>
+            <Button
               variant="outlined"
-              sx={{
-                fontSize: '1rem',
-                fontWeight: 'bold',
-                width: '10rem'
-              }}
-            />
-            {Object.keys(connectionCount.byLanguage).length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
-                  <Chip
-                    key={lang}
-                    label={`${getLanguageInfo(lang as LanguageCode).flag} ${count}`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ fontSize: '0.75rem' }}
-                  />
-                ))}
-              </div>
+              size="small"
+              startIcon={<QrCodeIcon />}
+              onClick={() => setQrModalOpen(true)}
+              sx={{ marginTop: '0.5rem', marginRight: '0.5rem' }}
+            >
+              Show QR Code
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DownloadIcon />}
+              onClick={downloadQRCode}
+              sx={{ marginTop: '0.5rem' }}
+            >
+              Download QR Code
+            </Button>
+          </QRCodeSection>
+        </LeftPanel>
+      )}
+
+      <RightPanel elevation={3} isMobile={isMobile}>
+        <RightPanelContent isMobile={isMobile}>
+          {isMobile && (
+            <Box sx={{ marginBottom: '1rem' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                <LanguageSelector
+                  label="Source Language"
+                  selectedLanguage={sourceLanguage}
+                  onLanguageChange={setSourceLanguage}
+                />
+              </Box>
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<QrCodeIcon />}
+                onClick={() => setQrModalOpen(true)}
+                sx={{
+                  borderRadius: '2rem',
+                  marginTop: '1rem',
+                  padding: '0.75rem'
+                }}
+              >
+                Show QR Code
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                fullWidth
+                sx={{
+                  borderRadius: '2rem',
+                  marginTop: '1rem',
+                  padding: '0.75rem'
+                }}
+                onClick={() => {
+                  if (isTranslating) {
+                    console.log('🎤 Stopping speech recognition')
+                    if (recognitionRef.current) {
+                      recognitionRef.current.stop()
+                    }
+                  } else {
+                    console.log('🎤 Starting speech recognition')
+                    if (recognitionRef.current) {
+                      recognitionRef.current.start()
+                    }
+                  }
+                }}
+              >
+                {isTranslating ? 'Translating...' : 'Translate'}
+              </Button>
+            </Box>
+          )}
+          
+          <BubblesContainer>
+            {currentTranscription && (
+              <MessageBubble elevation={1} sx={{ opacity: 0.7 }}>
+                <Typography variant="bodyText">{currentTranscription}</Typography>
+                <Typography variant="captionText">Listening...</Typography>
+              </MessageBubble>
             )}
-          </div>
-        </ConnectionDisplay>
-        <LanguageSelector
-          label="Source Language"
-          selectedLanguage={sourceLanguage}
-          onLanguageChange={setSourceLanguage}
-        />
-        <Button
-          variant="contained"
-          color="primary"
-          sx={{
+            {transcriptionBubbles.slice().reverse().map((bubble) => (
+              <MessageBubble key={bubble.id} elevation={3}>
+                <Typography variant="bodyText">{bubble.text}</Typography>
+              </MessageBubble>
+            ))}
+          </BubblesContainer>
+        </RightPanelContent>
+      </RightPanel>
+      
+      {/* QR Code Modal */}
+      <Dialog
+        open={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
             borderRadius: '2rem',
-            marginTop: '2rem'
-          }}
-          onClick={() => {
-            if (isTranslating) {
-              console.log('🎤 Stopping speech recognition')
-              if (recognitionRef.current) {
-                recognitionRef.current.stop()
-              }
-            } else {
-              console.log('🎤 Starting speech recognition')
-              if (recognitionRef.current) {
-                recognitionRef.current.start()
-              }
-            }
-          }}
-        >
-          {isTranslating ? 'Translating...' : 'Translate'}
-        </Button>
-        <QRCodeSection>
-          <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
+            padding: '1rem'
+          }
+        }}
+      >
+        <DialogTitle sx={{ textAlign: 'center', paddingBottom: '0.5rem' }}>
+          <Typography variant="sectionHeader">
             Audience Access
           </Typography>
-          <Typography variant="captionText" sx={{ textAlign: 'center' }}>
+        </DialogTitle>
+        <DialogContent sx={{ textAlign: 'center', paddingTop: '0.5rem' }}>
+          <Typography variant="bodyText" sx={{ marginBottom: '1.5rem', color: 'text.secondary' }}>
             Share this QR code with your audience
           </Typography>
-          <QRCodeContainer ref={qrCodeRef}>
+          
+          <Box ref={qrCodeRef} sx={{ marginBottom: '1.5rem' }}>
             {sessionId ? (
               <QRCode
                 value={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`}
-                size={120}
+                size={200}
                 style={{ height: "auto", maxWidth: "100%", width: "100%" }}
               />
             ) : (
               <Box sx={{ 
-                width: 120, 
-                height: 120, 
+                width: 200, 
+                height: 200, 
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center',
                 backgroundColor: 'rgba(255, 255, 255, 0.1)',
                 borderRadius: '8px'
               }}>
-                <Typography variant="captionText">Generating...</Typography>
+                <Typography variant="bodyText">Generating...</Typography>
               </Box>
             )}
-          </QRCodeContainer>
-          <Typography variant="captionText" sx={{ textAlign: 'center', fontSize: '0.75rem' }}>
+          </Box>
+          
+          <Typography variant="captionText" sx={{ 
+            textAlign: 'center', 
+            fontSize: '0.8rem', 
+            wordBreak: 'break-all',
+            marginBottom: '1rem',
+            display: 'block'
+          }}>
             {sessionId ? (
               <a href={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`} target="_blank" rel="noopener noreferrer">
                 {CONFIG.TRANSLATION_URL}?session={sessionId}
@@ -455,32 +691,25 @@ function InputApp() {
               'Generating session link...'
             )}
           </Typography>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'center', paddingTop: '0.5rem' }}>
           <Button
             variant="outlined"
-            size="small"
             startIcon={<DownloadIcon />}
             onClick={downloadQRCode}
-            sx={{ marginTop: '0.5rem' }}
+            sx={{ marginRight: '1rem' }}
           >
             Download QR Code
           </Button>
-        </QRCodeSection>
-      </LeftPanel>
-      <RightPanel elevation={3}>
-        <BubblesContainer>
-          {currentTranscription && (
-            <MessageBubble elevation={1} sx={{ opacity: 0.7 }}>
-              <Typography variant="bodyText">{currentTranscription}</Typography>
-              <Typography variant="captionText">Listening...</Typography>
-            </MessageBubble>
-          )}
-          {transcriptionBubbles.slice().reverse().map((bubble) => (
-            <MessageBubble key={bubble.id} elevation={3}>
-              <Typography variant="bodyText">{bubble.text}</Typography>
-            </MessageBubble>
-          ))}
-        </BubblesContainer>
-      </RightPanel>
+          <Button
+            variant="contained"
+            onClick={() => setQrModalOpen(false)}
+            sx={{ borderRadius: '2rem' }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </MainContainer>
   )
 }
