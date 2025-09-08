@@ -155,6 +155,7 @@ function InputApp() {
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [showSessionManager, setShowSessionManager] = useState(false)
   
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
@@ -165,20 +166,33 @@ function InputApp() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
-  // Generate session ID immediately when component mounts
   useEffect(() => {
-    if (!sessionId) {
-      const newSessionId = generateSessionId()
-      console.log('🔗 InputApp generated new session ID on mount:', newSessionId)
-    } else {
-      console.log('🔗 InputApp using existing session ID:', sessionId)
-      // Check if the session ID is in the old format and force a new one
-      if (sessionId.length > 8) {
-        console.log('🔗 InputApp found old format session ID, forcing new one:', sessionId)
-        forceNewSessionId()
+    if (tokens && sessionId && user) {
+      const registerSession = async () => {
+        try {
+          const response = await fetch(`${CONFIG.BACKEND_URL}/api/sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${tokens.accessToken}`
+            },
+            body: JSON.stringify({ sessionId })
+          })
+          
+          if (response.ok) {
+            const data = await response.json()
+            console.log('🔗 Session registered with backend:', data.message)
+          } else {
+            console.error('🔗 Failed to register session with backend')
+          }
+        } catch (error) {
+          console.error('🔗 Error registering session:', error)
+        }
       }
+      
+      registerSession()
     }
-  }, [sessionId, generateSessionId, forceNewSessionId]) // Include dependencies
+  }, [tokens, sessionId, user])
 
   useEffect(() => {
     if (!tokens || !sessionId) {
@@ -198,7 +212,11 @@ function InputApp() {
       auth: {
         token: tokens.accessToken,
         sessionId: sessionId
-      }
+      },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000
     })
     
     socketRef.current.on('connect', () => {
@@ -240,6 +258,18 @@ function InputApp() {
 
     socketRef.current.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error)
+    })
+
+    socketRef.current.on('reconnect', (attemptNumber) => {
+      console.log(`🔄 Reconnected after ${attemptNumber} attempts`)
+    })
+
+    socketRef.current.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection error:', error)
+    })
+
+    socketRef.current.on('reconnect_failed', () => {
+      console.error('❌ Reconnection failed after all attempts')
     })
 
     socketRef.current.on('error', (error) => {
@@ -464,6 +494,11 @@ function InputApp() {
     }
   }
 
+  const handleGenerateNewSession = () => {
+    const newSessionId = forceNewSessionId()
+    console.log('🔗 User requested new session ID:', newSessionId)
+  }
+
   return (
     <MainContainer isMobile={isMobile}>
       {isMobile ? (
@@ -633,9 +668,17 @@ function InputApp() {
               size="small"
               startIcon={<DownloadIcon />}
               onClick={downloadQRCode}
-              sx={{ marginTop: '0.5rem' }}
+              sx={{ marginTop: '0.5rem', marginRight: '0.5rem' }}
             >
               Download QR Code
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleGenerateNewSession}
+              sx={{ marginTop: '0.5rem' }}
+            >
+              New Session
             </Button>
           </QRCodeSection>
         </LeftPanel>

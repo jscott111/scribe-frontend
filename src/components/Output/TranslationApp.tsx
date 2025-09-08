@@ -234,7 +234,11 @@ function TranslationApp() {
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
         sessionId: sessionId
-      }
+      },
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      timeout: 20000
     })
     
     socketRef.current.on('connect', () => {
@@ -276,6 +280,20 @@ function TranslationApp() {
     
     socketRef.current.on('connect_error', (error) => {
       console.error('❌ Connection error:', error)
+      setIsConnected(false)
+    })
+
+    socketRef.current.on('reconnect', (attemptNumber) => {
+      console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
+      setIsConnected(true)
+    })
+
+    socketRef.current.on('reconnect_error', (error) => {
+      console.error('❌ TranslationApp reconnection error:', error)
+    })
+
+    socketRef.current.on('reconnect_failed', () => {
+      console.error('❌ TranslationApp reconnection failed after all attempts')
       setIsConnected(false)
     })
 
