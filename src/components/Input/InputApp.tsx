@@ -170,7 +170,7 @@ function InputApp() {
     if (tokens && sessionId && user) {
       const registerSession = async () => {
         try {
-          const response = await fetch(`${CONFIG.BACKEND_URL}/api/sessions`, {
+          const response = await fetch(`${CONFIG.BACKEND_URL}/sessions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

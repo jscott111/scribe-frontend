@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/api/auth/login`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,7 +102,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, name: string): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/api/auth/register`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,7 +137,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/api/auth/refresh`, {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
