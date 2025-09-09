@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
-import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -14,6 +14,7 @@ import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSession } from '../../contexts/SessionContext'
+import ProfileModal from '../Profile/ProfileModal'
 
 interface MessageBubble {
   id: string
@@ -98,6 +99,7 @@ const ConnectionDisplay = styled.div<{ isMobile: boolean }>`
   gap: 16px;
   margin-top: 1rem;
   margin-bottom: 1rem;
+  margin-left: 0.2rem;
 `
 
 const QRCodeSection = styled.div`
@@ -156,16 +158,16 @@ function InputApp() {
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
-  const [showSessionManager, setShowSessionManager] = useState(false)
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
   
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
-  const { sessionId, generateSessionId, setSessionId, forceNewSessionId } = useSession()
+  const { sessionId, forceNewSessionId } = useSession()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
@@ -566,17 +568,34 @@ function InputApp() {
             />
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <AccountBoxIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-              <Typography variant="bodyText" sx={{ 
-                color: 'text.secondary', 
-                fontSize: '1rem', 
-                display: 'flex', 
-                alignItems: 'center'
-              }}>
-                {user?.name}
-              </Typography>
-            </Box>
+            <Tooltip title="View Profile" arrow placement="bottom">
+              <Box 
+                sx={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  padding: '0.25rem',
+                  borderRadius: '0.5rem',
+                  '&:hover': {
+                    backgroundColor: 'rgba(210, 180, 140, 0.1)',
+                    transform: 'scale(1.02)'
+                  },
+                  transition: 'all 0.2s ease-in-out'
+                }}
+                onClick={() => setProfileModalOpen(true)}
+              >
+                <AccountBoxIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+                <Typography variant="bodyText" sx={{ 
+                  color: 'text.secondary', 
+                  fontSize: '1rem', 
+                  display: 'flex', 
+                  alignItems: 'center'
+                }}>
+                  {user?.name}
+                </Typography>
+              </Box>
+            </Tooltip>
             <IconButton
               onClick={logout}
               color="primary"
@@ -877,6 +896,16 @@ function InputApp() {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Profile Modal */}
+      <ProfileModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        user={user}
+        sessionId={sessionId}
+        isSocketConnected={isSocketConnected}
+        onLogout={logout}
+      />
     </MainContainer>
   )
 }
