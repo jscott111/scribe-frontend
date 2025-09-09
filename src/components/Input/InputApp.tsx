@@ -7,6 +7,7 @@ import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
 import QrCodeIcon from '@mui/icons-material/QrCode'
+import AccountBoxIcon from '@mui/icons-material/AccountBox';
 import QRCode from 'react-qr-code'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
@@ -63,7 +64,7 @@ const LeftPanel = styled(Paper)`
   border-radius: 2rem !important;
   margin: 1rem;
   margin-right: 0.5rem;
-  padding: 2rem;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -95,8 +96,8 @@ const ConnectionDisplay = styled.div<{ isMobile: boolean }>`
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-top: ${props => props.isMobile ? '1rem' : '4rem'};
-  margin-bottom: 2rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 `
 
 const QRCodeSection = styled.div`
@@ -104,7 +105,7 @@ const QRCodeSection = styled.div`
   flex-direction: column;
   align-items: center;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 1rem;
   padding: 1rem;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 1rem;
@@ -505,9 +506,13 @@ function InputApp() {
         <MobileHeader elevation={3}>
           <MobileHeaderLeft>
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <Typography variant="appTitle" sx={{ fontSize: '1.2rem', fontWeight: '600' }}>
-                Scribe
-              </Typography>
+              <Box sx={{ height: '5rem', display: 'flex', alignItems: 'center' }}>
+                <img 
+                  src="/scribe-logo-name-transparent.png" 
+                  alt="Scribe" 
+                  style={{ height: '100%', width: 'auto' }}
+                />
+              </Box>
               <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
                 {user?.name}
               </Typography>
@@ -537,12 +542,23 @@ function InputApp() {
           </MobileHeaderRight>
         </MobileHeader>
       ) : (
-        // Desktop Left Panel
         <LeftPanel elevation={3}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <Typography variant="appTitle" sx={{ margin: 0 }}>Scribe</Typography>
-              <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>
+          <Box sx={{ height: '7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img 
+              src="/scribe-logo-name-transparent.png" 
+              alt="Scribe" 
+              style={{ height: '100%', width: 'auto' }}
+            />
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AccountBoxIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+              <Typography variant="bodyText" sx={{ 
+                color: 'text.secondary', 
+                fontSize: '1rem', 
+                display: 'flex', 
+                alignItems: 'center'
+              }}>
                 {user?.name}
               </Typography>
             </Box>
@@ -551,6 +567,7 @@ function InputApp() {
               color="primary"
               sx={{ 
                 borderRadius: '50%',
+                padding: '0.5rem',
                 '&:hover': {
                   backgroundColor: 'rgba(210, 180, 140, 0.1)'
                 }

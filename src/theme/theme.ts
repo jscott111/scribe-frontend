@@ -51,39 +51,39 @@ const themeOptions: ThemeOptions = {
   palette: {
 		mode: 'dark',
 		primary: {
-			main: '#D2B48C',      // Light tan - much lighter and more readable
-			light: '#E6D3B7',
-			dark: '#B8946F',
+			main: '#9BB5D1',      // Light blue-gray - matches logo accent color
+			light: '#B8CCE4',
+			dark: '#7A9BC0',
 		},
 		secondary: {
-			main: '#BCAAA4',      // Light gray-brown - subtle and elegant
-			light: '#D7CCC8',
-			dark: '#A1887F',
+			main: '#A8B8C8',      // Medium blue-gray - subtle and elegant
+			light: '#C4D0DB',
+			dark: '#8FA0B0',
 		},
 		background: {
-			default: '#0A1128',   // Dark neutral blue
-			paper: '#1A2332',     // Slightly lighter blue-gray
+			default: '#2C3E50',   // Dark blue-gray - matches logo background
+			paper: '#34495E',     // Slightly lighter blue-gray
 		},
 		text: {
-			primary: '#F5F5DC',   // Warm off-white - excellent contrast
-			secondary: '#D2B48C', // Tan - still readable
+			primary: '#ECF0F1',   // Light gray - excellent contrast on dark background
+			secondary: '#ECF0F1', // Light blue-gray - matches primary
 		},
 		action: {
-			active: '#D2B48C',
-			selected: '#D2B48C',
-			focus: '#D2B48C',
+			active: '#9BB5D1',
+			selected: '#9BB5D1',
+			focus: '#9BB5D1',
 		},
 		success: {
-			main: '#4CAF50',      // Green for success states
+			main: '#27AE60',      // Green for success states
 		},
 		error: {
-			main: '#F44336',      // Red for errors
+			main: '#E74C3C',      // Red for errors
 		},
 		warning: {
-			main: '#FF9800',      // Orange for warnings
+			main: '#F39C12',      // Orange for warnings
 		},
 		info: {
-			main: '#64B5F6',      // Light blue for info
+			main: '#3498DB',      // Blue for info
 		},
 	},
   

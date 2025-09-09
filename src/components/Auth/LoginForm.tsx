@@ -126,9 +126,13 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
   return (
     <LoginContainer>
       <LoginCard elevation={3}>
-        <CustomTypography variant="appTitle" sx={{ fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '1rem' }}>
-          Scribe
-        </CustomTypography>
+        <Box sx={{ height: '2.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '1.5rem', marginBottom: '1rem' }}>
+          <img 
+            src="/scribe-logo-name-transparent.png" 
+            alt="Scribe" 
+            style={{ height: '100%', width: 'auto' }}
+          />
+        </Box>
         
         <CustomTypography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
           Welcome Back

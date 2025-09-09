@@ -269,7 +269,7 @@ function TranslationApp() {
         id: data.bubbleId || Date.now().toString(),
         originalText: 'Unknown',
         translatedText: 'Translation failed',
-        sourceLanguage: 'en',
+        sourceLanguage: 'en' as LanguageCode,
         targetLanguage: targetLanguage,
         timestamp: new Date(),
         isComplete: true
@@ -324,9 +324,13 @@ function TranslationApp() {
     return (
       <LandingPageContainer>
         <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
-          <Typography variant="appTitle" sx={{ fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '1rem' }}>
-            Scribe
-          </Typography>
+          <Box sx={{ height: '5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '1.5rem', marginBottom: '1rem' }}>
+            <img 
+              src="/scribe-logo-name-transparent.png" 
+              alt="Scribe" 
+              style={{ height: '100%', width: 'auto' }}
+            />
+          </Box>
           
           <Typography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
             No Session Found
@@ -348,9 +352,13 @@ function TranslationApp() {
     return (
       <LandingPageContainer>
         <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
-          <Typography variant="appTitle" sx={{ fontSize: '1.5rem', marginTop: '1.5rem', marginBottom: '1rem' }}>
-            Scribe
-          </Typography>
+          <Box sx={{ height: '5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '1.5rem', marginBottom: '1rem' }}>
+            <img 
+              src="/scribe-logo-name-transparent.png" 
+              alt="Scribe" 
+              style={{ height: '100%', width: 'auto' }}
+            />
+          </Box>
           
           <Typography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
             Real-time Translation
@@ -447,7 +455,13 @@ function TranslationApp() {
           </BackButton>
 
           <HeaderSection isMobile={isMobile}>
-            <Typography variant="appTitle">Scribe</Typography>
+            <Box sx={{ height: '5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img 
+                src="/scribe-logo-name-transparent.png" 
+                alt="Scribe" 
+                style={{ height: '100%', width: 'auto' }}
+              />
+            </Box>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
               Translating to {getLanguageInfo(targetLanguage).name} {getLanguageInfo(targetLanguage).flag}
             </Typography>
