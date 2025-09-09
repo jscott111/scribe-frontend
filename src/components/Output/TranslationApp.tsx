@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
-import { Paper, Chip, Button, Box, useMediaQuery, useTheme, IconButton, CircularProgress } from '@mui/material'
+import { Paper, Chip, Button, Box, useMediaQuery, useTheme, CircularProgress, TextField } from '@mui/material'
 import LanguageSelector from '../LanguageSelector'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
@@ -201,13 +201,49 @@ function TranslationApp() {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
+  const [sessionInput, setSessionInput] = useState('')
+  const [isValidatingSession, setIsValidatingSession] = useState(false)
+  const [sessionValidationError, setSessionValidationError] = useState('')
+  const [attemptedSessionId, setAttemptedSessionId] = useState('')
   
   const socketRef = useRef<Socket | null>(null)
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const { sessionId, setSessionId, clearSessionId } = useSession()
 
-  // Get session ID from URL parameters
+  // Function to validate session ID
+  const validateSessionId = async (sessionIdToValidate: string): Promise<boolean> => {
+    if (!sessionIdToValidate || !/^[A-Z0-9]{8}$/.test(sessionIdToValidate)) {
+      setSessionValidationError('Session ID must be 8 characters (letters and numbers)')
+      clearSessionId() // Clear any existing session ID
+      return false
+    }
+
+    setIsValidatingSession(true)
+    setSessionValidationError('')
+
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/sessions/${sessionIdToValidate}/validate`)
+      const data = await response.json()
+
+      if (data.valid) {
+        setSessionId(sessionIdToValidate)
+        return true
+      } else {
+        setSessionValidationError(data.error || 'Session not found or inactive')
+        clearSessionId() // Clear any existing session ID
+        return false
+      }
+    } catch (error) {
+      console.error('Session validation error:', error)
+      setSessionValidationError('Failed to validate session. Please try again.')
+      clearSessionId() // Clear any existing session ID
+      return false
+    } finally {
+      setIsValidatingSession(false)
+    }
+  }
+  
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const sessionFromUrl = urlParams.get('session')
@@ -215,8 +251,9 @@ function TranslationApp() {
     console.log('🔗 TranslationApp - Current sessionId:', sessionId)
     
     if (sessionFromUrl) {
-      console.log('🔗 TranslationApp - Setting session ID:', sessionFromUrl)
-      setSessionId(sessionFromUrl)
+      setAttemptedSessionId(sessionFromUrl.toUpperCase())
+      setSessionInput(sessionFromUrl.toUpperCase())
+      validateSessionId(sessionFromUrl)
     } else {
       console.log('🔗 TranslationApp - No session ID in URL, clearing session and showing blank page')
       clearSessionId() // Clear any existing session ID
@@ -334,7 +371,7 @@ function TranslationApp() {
     }
   }
 
-  if (!sessionId) {
+  if (!sessionId || sessionValidationError) {
     return (
       <LandingPageContainer>
         <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
@@ -347,15 +384,66 @@ function TranslationApp() {
           </Box>
           
           <Typography variant="sectionHeader" sx={{ fontSize: '1.25rem', textAlign: 'center' }}>
-            No Session Found
+            Join Translation Session
           </Typography>
           
           <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary' }}>
-            This translation app requires a session ID to connect to a live translation session.
+            {attemptedSessionId ? 
+              `The session ID "${attemptedSessionId}" is not valid. Please enter a different session ID.` :
+              'Enter the session ID provided by the speaker to join their live translation session.'
+            }
           </Typography>
           
-          <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary', marginTop: '1rem' }}>
-            Please scan the QR code from the speaker's device to join their session.
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '300px' }}>
+            <TextField
+              label="Session ID"
+              value={sessionInput}
+              onChange={(e) => {
+                setSessionInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))
+                setSessionValidationError('')
+                setAttemptedSessionId('')
+              }}
+              placeholder="ABC12345"
+              variant="outlined"
+              fullWidth
+              error={!!sessionValidationError}
+              helperText={sessionValidationError || 'Enter the 8-character session ID'}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '1rem',
+                  fontSize: '1.1rem',
+                  textAlign: 'center',
+                  letterSpacing: '0.1em',
+                  fontFamily: 'monospace'
+                }
+              }}
+            />
+            
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => validateSessionId(sessionInput)}
+              disabled={!sessionInput || sessionInput.length !== 8 || isValidatingSession}
+              sx={{
+                borderRadius: '1rem',
+                padding: '0.75rem',
+                fontSize: '1rem',
+                fontWeight: '600'
+              }}
+            >
+              {isValidatingSession ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <CircularProgress size={20} />
+                  Validating...
+                </Box>
+              ) : (
+                'Join Session'
+              )}
+            </Button>
+          </Box>
+          
+          <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary', fontSize: '0.9rem' }}>
+            Or scan the QR code from the speaker's device to join automatically.
           </Typography>
         </LandingCard>
       </LandingPageContainer>
@@ -392,6 +480,30 @@ function TranslationApp() {
               selectedLanguage={targetLanguage || LanguageCode.EN}
               onLanguageChange={setTargetLanguage}
             />
+            
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px' }}>
+              <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary', fontSize: '0.9rem' }}>
+                Session: <strong>{sessionId}</strong>
+              </Typography>
+              
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => {
+                  clearSessionId()
+                  setSessionInput('')
+                  setSessionValidationError('')
+                  setAttemptedSessionId('')
+                }}
+                sx={{
+                  borderRadius: '1rem',
+                  padding: '0.5rem',
+                  fontSize: '0.9rem'
+                }}
+              >
+                Change Session
+              </Button>
+            </Box>
             
             <StartButton
               variant="contained"

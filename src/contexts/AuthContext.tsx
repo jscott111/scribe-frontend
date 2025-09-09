@@ -38,7 +38,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!tokens
 
-  // Load tokens from localStorage on mount and validate them
   useEffect(() => {
     const loadStoredAuth = async () => {
       try {
@@ -59,29 +58,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             })
             
             if (response.ok) {
-              // Token is valid, set the auth state
               setTokens(parsedTokens)
               setUser(parsedUser)
             } else {
-              // Token is invalid, try to refresh
               console.log('Token validation failed, attempting refresh...')
               const refreshSuccess = await refreshTokenWithTokens(parsedTokens)
               if (!refreshSuccess) {
-                // Refresh failed, clear stored data
                 localStorage.removeItem('authTokens')
                 localStorage.removeItem('authUser')
               }
             }
           } catch (error) {
             console.error('Error validating token:', error)
-            // Network error or other issue, clear stored data
             localStorage.removeItem('authTokens')
             localStorage.removeItem('authUser')
           }
         }
       } catch (error) {
         console.error('Error loading stored auth:', error)
-        // Clear invalid stored data
         localStorage.removeItem('authTokens')
         localStorage.removeItem('authUser')
       } finally {
@@ -92,7 +86,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loadStoredAuth()
   }, [])
 
-  // Helper function to refresh token with provided tokens
   const refreshTokenWithTokens = async (tokens: AuthTokens): Promise<boolean> => {
     if (!tokens?.refreshToken) {
       return false
@@ -120,7 +113,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }
 
-  // Store tokens in localStorage when they change
   useEffect(() => {
     if (tokens && user) {
       localStorage.setItem('authTokens', JSON.stringify(tokens))
