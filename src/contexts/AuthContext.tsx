@@ -38,9 +38,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!tokens
 
-  // Load tokens from localStorage on mount
+  // Load tokens from localStorage on mount and validate them
   useEffect(() => {
-    const loadStoredAuth = () => {
+    const loadStoredAuth = async () => {
       try {
         const storedTokens = localStorage.getItem('authTokens')
         const storedUser = localStorage.getItem('authUser')
@@ -49,8 +49,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const parsedTokens = JSON.parse(storedTokens)
           const parsedUser = JSON.parse(storedUser)
           
-          setTokens(parsedTokens)
-          setUser(parsedUser)
+          // Validate the token with the backend
+          try {
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/me`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${parsedTokens.accessToken}`
+              }
+            })
+            
+            if (response.ok) {
+              // Token is valid, set the auth state
+              setTokens(parsedTokens)
+              setUser(parsedUser)
+            } else {
+              // Token is invalid, try to refresh
+              console.log('Token validation failed, attempting refresh...')
+              const refreshSuccess = await refreshTokenWithTokens(parsedTokens)
+              if (!refreshSuccess) {
+                // Refresh failed, clear stored data
+                localStorage.removeItem('authTokens')
+                localStorage.removeItem('authUser')
+              }
+            }
+          } catch (error) {
+            console.error('Error validating token:', error)
+            // Network error or other issue, clear stored data
+            localStorage.removeItem('authTokens')
+            localStorage.removeItem('authUser')
+          }
         }
       } catch (error) {
         console.error('Error loading stored auth:', error)
@@ -64,6 +91,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     loadStoredAuth()
   }, [])
+
+  // Helper function to refresh token with provided tokens
+  const refreshTokenWithTokens = async (tokens: AuthTokens): Promise<boolean> => {
+    if (!tokens?.refreshToken) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken: tokens.refreshToken }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Token refresh failed')
+      }
+
+      const data = await response.json()
+      setTokens(data.tokens)
+      return true
+    } catch (error) {
+      console.error('Token refresh error:', error)
+      return false
+    }
+  }
 
   // Store tokens in localStorage when they change
   useEffect(() => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
-import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Modal, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Modal, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -157,6 +157,8 @@ function InputApp() {
   const [currentTranscription, setCurrentTranscription] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [showSessionManager, setShowSessionManager] = useState(false)
+  const [isSocketConnecting, setIsSocketConnecting] = useState(false)
+  const [isSocketConnected, setIsSocketConnected] = useState(false)
   
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
@@ -198,10 +200,14 @@ function InputApp() {
   useEffect(() => {
     if (!tokens || !sessionId) {
       console.log('🔌 Socket: Missing tokens or sessionId, not connecting')
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
       return
     }
 
     console.log('🔌 Socket: Connecting to', CONFIG.BACKEND_URL, 'with sessionId:', sessionId)
+    setIsSocketConnecting(true)
+    setIsSocketConnected(false)
 
     // Clean up existing socket
     if (socketRef.current) {
@@ -222,6 +228,8 @@ function InputApp() {
     
     socketRef.current.on('connect', () => {
       console.log('🔌 Socket connected successfully')
+      setIsSocketConnecting(false)
+      setIsSocketConnected(true)
       socketRef.current?.emit('getConnectionCount')
       
       // Set up periodic connection count refresh
@@ -255,22 +263,32 @@ function InputApp() {
 
     socketRef.current.on('disconnect', (reason) => {
       console.log('🔌 Socket disconnected:', reason)
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
     })
 
     socketRef.current.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error)
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
     })
 
     socketRef.current.on('reconnect', (attemptNumber) => {
       console.log(`🔄 Reconnected after ${attemptNumber} attempts`)
+      setIsSocketConnecting(false)
+      setIsSocketConnected(true)
     })
 
     socketRef.current.on('reconnect_error', (error) => {
       console.error('❌ Reconnection error:', error)
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
     })
 
     socketRef.current.on('reconnect_failed', () => {
       console.error('❌ Reconnection failed after all attempts')
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
     })
 
     socketRef.current.on('error', (error) => {
@@ -316,6 +334,8 @@ function InputApp() {
         socketRef.current.disconnect()
         socketRef.current = null
       }
+      setIsSocketConnecting(false)
+      setIsSocketConnected(false)
     }
   }, [tokens, sessionId]) // Include dependencies
 
@@ -520,12 +540,21 @@ function InputApp() {
           </MobileHeaderLeft>
           
           <MobileHeaderRight>
-            <Chip
-              label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
-              color="primary"
-              variant="outlined"
-              size="small"
-            />
+            {isSocketConnecting ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CircularProgress size={16} />
+                <Typography variant="captionText" sx={{ fontSize: '0.75rem' }}>
+                  Connecting...
+                </Typography>
+              </Box>
+            ) : (
+              <Chip
+                label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+                color={isSocketConnected ? "primary" : "error"}
+                variant="outlined"
+                size="small"
+              />
+            )}
             <IconButton
               onClick={logout}
               color="primary"
@@ -579,16 +608,25 @@ function InputApp() {
           <ConnectionDisplay isMobile={isMobile}>
             <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <Chip
-                label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
-                color="primary"
-                variant="outlined"
-                sx={{
-                  fontSize: '1rem',
-                  fontWeight: 'bold',
-                  width: '10rem'
-                }}
-              />
+              {isSocketConnecting ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '10rem' }}>
+                  <CircularProgress size={20} />
+                  <Typography variant="bodyText" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                    Connecting...
+                  </Typography>
+                </Box>
+              ) : (
+                <Chip
+                  label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+                  color={isSocketConnected ? "primary" : "error"}
+                  variant="outlined"
+                  sx={{
+                    fontSize: '1rem',
+                    fontWeight: 'bold',
+                    width: '10rem'
+                  }}
+                />
+              )}
               {Object.keys(connectionCount.byLanguage).length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                   {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (

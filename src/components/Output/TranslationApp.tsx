@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
-import { Paper, Chip, Button, Box, useMediaQuery, useTheme, IconButton } from '@mui/material'
+import { Paper, Chip, Button, Box, useMediaQuery, useTheme, IconButton, CircularProgress } from '@mui/material'
 import LanguageSelector from '../LanguageSelector'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
@@ -199,6 +199,7 @@ function TranslationApp() {
   const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(LanguageCode.FR)
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
   
   const socketRef = useRef<Socket | null>(null)
@@ -228,8 +229,13 @@ function TranslationApp() {
     // Only connect if we have both a session ID and target language
     if (!targetLanguage || !sessionId) {
       console.log('🔗 TranslationApp - Not connecting: missing sessionId or targetLanguage')
+      setIsConnecting(false)
+      setIsConnected(false)
       return
     }
+
+    setIsConnecting(true)
+    setIsConnected(false)
 
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
@@ -242,11 +248,12 @@ function TranslationApp() {
     })
     
     socketRef.current.on('connect', () => {
+      setIsConnecting(false)
       setIsConnected(true)
-      // Don't set target language until user clicks "Start Listening"
     })
     
     socketRef.current.on('disconnect', () => {
+      setIsConnecting(false)
       setIsConnected(false)
     })
     
@@ -280,20 +287,25 @@ function TranslationApp() {
     
     socketRef.current.on('connect_error', (error) => {
       console.error('❌ Connection error:', error)
+      setIsConnecting(false)
       setIsConnected(false)
     })
 
     socketRef.current.on('reconnect', (attemptNumber) => {
       console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
+      setIsConnecting(false)
       setIsConnected(true)
     })
 
     socketRef.current.on('reconnect_error', (error) => {
       console.error('❌ TranslationApp reconnection error:', error)
+      setIsConnecting(false)
+      setIsConnected(false)
     })
 
     socketRef.current.on('reconnect_failed', () => {
       console.error('❌ TranslationApp reconnection failed after all attempts')
+      setIsConnecting(false)
       setIsConnected(false)
     })
 
@@ -301,6 +313,8 @@ function TranslationApp() {
       if (socketRef.current) {
         socketRef.current.disconnect()
       }
+      setIsConnecting(false)
+      setIsConnected(false)
     }
   }, [targetLanguage, sessionId])
 
@@ -430,12 +444,21 @@ function TranslationApp() {
           </MobileHeaderLeft>
           
           <MobileHeaderRight>
-            <Chip
-              label={isConnected ? 'Connected' : 'Disconnected'}
-              color={isConnected ? 'success' : 'error'}
-              variant="outlined"
-              size="small"
-            />
+            {isConnecting ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CircularProgress size={16} />
+                <Typography variant="captionText" sx={{ fontSize: '0.75rem' }}>
+                  Connecting...
+                </Typography>
+              </Box>
+            ) : (
+              <Chip
+                label={isConnected ? 'Connected' : 'Disconnected'}
+                color={isConnected ? 'success' : 'error'}
+                variant="outlined"
+                size="small"
+              />
+            )}
           </MobileHeaderRight>
         </MobileHeader>
       ) : (
@@ -468,11 +491,20 @@ function TranslationApp() {
           </HeaderSection>
 
           <ConnectionStatusContainer>
-            <Chip
-              label={isConnected ? 'Connected' : 'Disconnected'}
-              color={isConnected ? 'success' : 'error'}
-              variant="outlined"
-            />
+            {isConnecting ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CircularProgress size={20} />
+                <Typography variant="bodyText" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                  Connecting...
+                </Typography>
+              </Box>
+            ) : (
+              <Chip
+                label={isConnected ? 'Connected' : 'Disconnected'}
+                color={isConnected ? 'success' : 'error'}
+                variant="outlined"
+              />
+            )}
           </ConnectionStatusContainer>
         </LeftPanel>
       )}
