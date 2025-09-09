@@ -94,7 +94,7 @@ const RightPanel = styled(Paper)<{ isMobile: boolean }>`
 
 const ConnectionDisplay = styled.div<{ isMobile: boolean }>`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
   margin-top: 1rem;
   margin-bottom: 1rem;
@@ -592,32 +592,35 @@ function InputApp() {
             </IconButton>
           </Box>
           <ConnectionDisplay isMobile={isMobile}>
-            <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {isSocketConnecting ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '10rem' }}>
-                  <CircularProgress size={20} />
-                  <Typography variant="bodyText" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
-                    Connecting...
-                  </Typography>
-                </Box>
-              ) : (
-                <Chip
-                  label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
-                  color={isSocketConnected ? "primary" : "error"}
-                  variant="outlined"
-                  sx={{
-                    fontSize: '1rem',
-                    fontWeight: 'bold',
-                    width: '10rem'
-                  }}
-                />
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <PeopleIcon sx={{ fontSize: 32, color: 'primary.main' }} />
+                {isSocketConnecting ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '10rem' }}>
+                    <CircularProgress size={20} />
+                    <Typography variant="bodyText" sx={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                      Connecting...
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Chip
+                    label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+                    color={isSocketConnected ? "primary" : "error"}
+                    variant="outlined"
+                    sx={{
+                      fontSize: '1rem',
+                      fontWeight: 'bold',
+                      width: '10rem'
+                    }}
+                  />
+                )}
+              </div>
               {Object.keys(connectionCount.byLanguage).length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginLeft: '3rem' }}>
                   {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
                     <Chip
                       key={lang}
+                      color="primary"
                       label={`${getLanguageInfo(lang as LanguageCode).flag} ${count}`}
                       size="small"
                       variant="outlined"

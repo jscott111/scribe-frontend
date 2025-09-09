@@ -48,7 +48,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const parsedTokens = JSON.parse(storedTokens)
           const parsedUser = JSON.parse(storedUser)
           
-          // Validate the token with the backend
           try {
             const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/me`, {
               method: 'GET',
