@@ -345,7 +345,6 @@ function InputApp() {
       return
     }
 
-    // Clean up existing recognition instance
     if (recognitionRef.current) {
       recognitionRef.current.stop()
       recognitionRef.current = null
@@ -360,7 +359,6 @@ function InputApp() {
     recognitionRef.current.lang = sourceLanguage
 
     recognitionRef.current.onstart = () => {
-      console.log('🎤 Speech recognition started')
       setIsTranslating(true)
       setShouldBeListening(true)
     }
@@ -369,16 +367,12 @@ function InputApp() {
       let finalTranscript = ''
       let interimTranscript = ''
 
-      console.log('🎤 Speech recognition result:', event.results.length, 'results')
-
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript
         if (event.results[i].isFinal) {
           finalTranscript += transcript
-          console.log('🎤 Final transcript:', transcript)
         } else {
           interimTranscript += transcript
-          console.log('🎤 Interim transcript:', transcript)
         }
       }
 
@@ -390,12 +384,10 @@ function InputApp() {
           isComplete: false
         }
         
-        console.log('🎤 Creating new bubble:', newBubble)
         setTranscriptionBubbles(prev => [...prev, newBubble])
         setCurrentTranscription('')
         
         if (socketRef.current && socketRef.current.connected) {
-          console.log('🎤 Emitting transcription to socket')
           socketRef.current.emit('speechTranscription', {
             transcription: finalTranscript.trim(),
             sourceLanguage,
@@ -409,7 +401,6 @@ function InputApp() {
           clearTimeout(timeoutRef.current)
         }
         timeoutRef.current = setTimeout(() => {
-          console.log('🎤 Marking bubble as complete:', newBubble.id)
           setTranscriptionBubbles((prev) =>
             prev.map((bubble) =>
               bubble.id === newBubble.id
@@ -417,9 +408,8 @@ function InputApp() {
                 : bubble
             )
           )
-        }, 2000)
+        }, 250)
       } else if (interimTranscript.trim()) {
-        // Only update current transcription, don't create new bubbles
         setCurrentTranscription(interimTranscript.trim())
       }
     }
@@ -430,7 +420,6 @@ function InputApp() {
       
       // On mobile, some errors are recoverable - try to restart after a short delay
       if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
-        console.log('🎤 Attempting to restart speech recognition after error')
         setTimeout(() => {
           if (recognitionRef.current && shouldBeListening && !isTranslating) {
             try {
@@ -444,12 +433,9 @@ function InputApp() {
     }
 
     recognitionRef.current.onend = () => {
-      console.log('🎤 Speech recognition ended')
       setIsTranslating(false)
       
-      // On mobile, speech recognition often ends automatically - restart if we were supposed to be listening
       if (shouldBeListening) {
-        console.log('🎤 Speech recognition ended unexpectedly, attempting restart')
         setTimeout(() => {
           if (recognitionRef.current && shouldBeListening && !isTranslating) {
             try {
