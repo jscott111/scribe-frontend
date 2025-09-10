@@ -80,9 +80,10 @@ const SwitchAuthContainer = styled(Box)`
 
 interface LoginFormProps {
   onSwitchToRegister: () => void
+  onTOTPForgotPassword: () => void
 }
 
-const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
+const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onTOTPForgotPassword }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -205,6 +206,26 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister }) => {
               },
             }}
           />
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}>
+            <Link
+              component="button"
+              type="button"
+              variant="body2"
+              onClick={onTOTPForgotPassword}
+              sx={{
+                color: 'primary.main',
+                textDecoration: 'none',
+                fontWeight: '500',
+                fontSize: '0.9rem',
+                '&:hover': {
+                  textDecoration: 'underline',
+                },
+              }}
+            >
+              Forgot Password?
+            </Link>
+          </Box>
 
           <LoginButton
             type="submit"

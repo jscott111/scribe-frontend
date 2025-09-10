@@ -99,7 +99,7 @@ const ConnectionDisplay = styled.div<{ isMobile: boolean }>`
   gap: 16px;
   margin-top: 1rem;
   margin-bottom: 1rem;
-  margin-left: 0.2rem;
+  margin-left: 0.2I think rem;
 `
 
 const QRCodeSection = styled.div`

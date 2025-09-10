@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -7,10 +7,15 @@ import {
   Button,
   Box,
   Avatar,
-  Divider
+  Divider,
+  Switch,
+  FormControlLabel,
+  Alert
 } from '@mui/material'
 import LogoutIcon from '@mui/icons-material/Logout'
+import SecurityIcon from '@mui/icons-material/Security'
 import Typography from '../UI/Typography'
+import TOTPSetupModal from './TOTPSetupModal'
 
 interface User {
   id: number
@@ -18,6 +23,7 @@ interface User {
   name: string
   createdAt: string
   updatedAt?: string
+  totpEnabled?: boolean
 }
 
 interface ProfileModalProps {
@@ -37,6 +43,9 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   isSocketConnected,
   onLogout
 }) => {
+  const [totpSetupOpen, setTotpSetupOpen] = useState(false)
+  const [totpEnabled, setTotpEnabled] = useState(user?.totpEnabled || false)
+  const [error, setError] = useState<string | null>(null)
   const handleLogout = () => {
     onClose()
     onLogout()
@@ -102,17 +111,52 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
             </Typography>
           </Box>
           
-          <Box>
-            <Typography variant="subsectionHeader" sx={{ marginBottom: '0.5rem' }}>
-              Session Information
-            </Typography>
-            <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '0.25rem' }}>
-              <strong>Current Session:</strong> {sessionId}
-            </Typography>
-            <Typography variant="bodyText" sx={{ color: 'text.secondary' }}>
-              <strong>Status:</strong> {isSocketConnected ? 'Connected' : 'Disconnected'}
-            </Typography>
-          </Box>
+                 <Box>
+                   <Typography variant="subsectionHeader" sx={{ marginBottom: '0.5rem' }}>
+                     Session Information
+                   </Typography>
+                   <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '0.25rem' }}>
+                     <strong>Current Session:</strong> {sessionId}
+                   </Typography>
+                   <Typography variant="bodyText" sx={{ color: 'text.secondary' }}>
+                     <strong>Status:</strong> {isSocketConnected ? 'Connected' : 'Disconnected'}
+                   </Typography>
+                 </Box>
+                 
+                 <Box>
+                   <Typography variant="subsectionHeader" sx={{ marginBottom: '0.5rem' }}>
+                     Security Settings
+                   </Typography>
+                   <FormControlLabel
+                     control={
+                       <Switch
+                         checked={totpEnabled}
+                         onChange={(e) => {
+                           if (e.target.checked) {
+                             setTotpSetupOpen(true)
+                           } else {
+                             // TODO: Add disable TOTP functionality
+                             setError('TOTP disable functionality not implemented yet')
+                           }
+                         }}
+                         color="primary"
+                       />
+                     }
+                     label={
+                       <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                         <SecurityIcon sx={{ fontSize: 20 }} />
+                         <Typography variant="bodyText">
+                           Two-Factor Authentication (TOTP)
+                         </Typography>
+                       </Box>
+                     }
+                   />
+                   {error && (
+                     <Alert severity="error" sx={{ marginTop: '0.5rem' }}>
+                       {error}
+                     </Alert>
+                   )}
+                 </Box>
         </Box>
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'center', paddingTop: '0.5rem' }}>
@@ -134,6 +178,17 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           Logout
         </Button>
       </DialogActions>
+      
+      <TOTPSetupModal
+        open={totpSetupOpen}
+        onClose={() => setTotpSetupOpen(false)}
+        onSuccess={() => {
+          setTotpEnabled(true)
+          setTotpSetupOpen(false)
+          setError(null)
+        }}
+        user={user}
+      />
     </Dialog>
   )
 }
