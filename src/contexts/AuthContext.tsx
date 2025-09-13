@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { hashPassword } from '../utils/passwordHash'
+import { CONFIG } from '../config/urls'
 
 interface User {
   id: number
@@ -7,6 +8,7 @@ interface User {
   name: string
   createdAt: string
   updatedAt?: string
+  totpEnabled?: boolean
 }
 
 interface AuthTokens {
@@ -39,6 +41,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const isAuthenticated = !!user && !!tokens
 
+  const fetchUserData = async (accessToken: string): Promise<User | null> => {
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        return data.user
+      }
+      return null
+    } catch (error) {
+      console.error('Error fetching user data:', error)
+      return null
+    }
+  }
+
   useEffect(() => {
     const loadStoredAuth = async () => {
       try {
@@ -50,16 +72,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const parsedUser = JSON.parse(storedUser)
           
           try {
-            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/me`, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${parsedTokens.accessToken}`
-              }
-            })
+            const freshUserData = await fetchUserData(parsedTokens.accessToken)
             
-            if (response.ok) {
+            if (freshUserData) {
               setTokens(parsedTokens)
-              setUser(parsedUser)
+              setUser(freshUserData)
             } else {
               console.log('Token validation failed, attempting refresh...')
               const refreshSuccess = await refreshTokenWithTokens(parsedTokens)
@@ -92,7 +109,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/refresh`, {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -106,6 +123,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const data = await response.json()
       setTokens(data.tokens)
+      
+      // Fetch fresh user data after token refresh
+      const freshUserData = await fetchUserData(data.tokens.accessToken)
+      if (freshUserData) {
+        setUser(freshUserData)
+      }
+      
       return true
     } catch (error) {
       console.error('Token refresh error:', error)
@@ -125,7 +149,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/login`, {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +173,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (email: string, password: string, name: string): Promise<void> => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/register`, {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -184,7 +208,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca'}/auth/refresh`, {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/refresh`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,6 +222,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const data = await response.json()
       setTokens(data.tokens)
+      
+      // Fetch fresh user data after token refresh
+      const freshUserData = await fetchUserData(data.tokens.accessToken)
+      if (freshUserData) {
+        setUser(freshUserData)
+      }
+      
       return true
     } catch (error) {
       console.error('Token refresh error:', error)

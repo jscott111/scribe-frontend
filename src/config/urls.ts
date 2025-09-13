@@ -9,7 +9,7 @@ const getConfig = () => {
       // Development URLs with subdomains (same port)
       TRANSLATION_URL: 'http://listener.localhost:5173',
       INPUT_URL: 'http://speaker.localhost:5173',
-      BACKEND_URL: 'http://api.localhost:3001'
+      BACKEND_URL: 'http://localhost:3001'
     }
   } else if (isStaging) {
     return {

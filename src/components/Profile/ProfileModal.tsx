@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogTitle,
@@ -46,6 +46,11 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   const [totpSetupOpen, setTotpSetupOpen] = useState(false)
   const [totpEnabled, setTotpEnabled] = useState(user?.totpEnabled || false)
   const [error, setError] = useState<string | null>(null)
+
+  // Update TOTP status when user data changes
+  useEffect(() => {
+    setTotpEnabled(user?.totpEnabled || false)
+  }, [user?.totpEnabled])
   const handleLogout = () => {
     onClose()
     onLogout()

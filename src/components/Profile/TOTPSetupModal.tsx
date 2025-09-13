@@ -94,10 +94,16 @@ const TOTPSetupModal: React.FC<TOTPSetupModalProps> = ({
   const steps = ['Generate Secret', 'Scan QR Code', 'Verify Setup', 'Save Backup Codes']
 
   useEffect(() => {
-    if (open && activeStep === 0) {
-      generateTOTPSecret()
+    if (open) {
+      // Reset state when modal opens
+      setActiveStep(0)
+      setQrCodeUrl(null)
+      setSecretKey(null)
+      setVerificationCode('')
+      setError(null)
+      setBackupCodes([])
     }
-  }, [open, activeStep])
+  }, [open])
 
   const generateTOTPSecret = async () => {
     setIsLoading(true)
@@ -179,10 +185,26 @@ const TOTPSetupModal: React.FC<TOTPSetupModalProps> = ({
               We'll generate a secret key and QR code for your authenticator app.
             </CustomTypography>
 
-            {isLoading && (
+            {error && (
+              <Alert severity="error" sx={{ borderRadius: '1rem' }}>
+                {error}
+              </Alert>
+            )}
+
+            {isLoading ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Typography>Generating secret...</Typography>
               </Box>
+            ) : (
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={generateTOTPSecret}
+                startIcon={<Security />}
+                sx={{ borderRadius: '2rem' }}
+              >
+                Generate Secret
+              </Button>
             )}
           </SetupContainer>
         )
@@ -464,6 +486,17 @@ const TOTPSetupModal: React.FC<TOTPSetupModalProps> = ({
             >
               Cancel
             </Button>
+            {activeStep === 0 && !isLoading && (
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={generateTOTPSecret}
+                startIcon={<Security />}
+                sx={{ borderRadius: '2rem' }}
+              >
+                Generate Secret
+              </Button>
+            )}
             {activeStep === 2 && (
               <Button
                 variant="contained"

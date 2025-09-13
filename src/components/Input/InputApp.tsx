@@ -167,9 +167,17 @@ function InputApp() {
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
-  const { sessionId, forceNewSessionId } = useSession()
+  const { sessionId, forceNewSessionId, generateSessionId } = useSession()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+
+  // Generate session ID when user logs in but doesn't have one
+  useEffect(() => {
+    if (tokens && user && !sessionId) {
+      console.log('🔗 User logged in without session ID, generating new one')
+      generateSessionId()
+    }
+  }, [tokens, user, sessionId, generateSessionId])
 
   useEffect(() => {
     if (tokens && sessionId && user) {

@@ -20,6 +20,7 @@ import {
 import styled from 'styled-components'
 import { useAuth } from '../../contexts/AuthContext'
 import CustomTypography from '../UI/Typography'
+import EmailForgotPasswordForm from './EmailForgotPasswordForm'
 
 const LoginContainer = styled.div`
   display: flex;
@@ -81,9 +82,10 @@ const SwitchAuthContainer = styled(Box)`
 interface LoginFormProps {
   onSwitchToRegister: () => void
   onTOTPForgotPassword: () => void
+  onEmailForgotPassword: () => void
 }
 
-const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onTOTPForgotPassword }) => {
+const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onTOTPForgotPassword, onEmailForgotPassword }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -207,7 +209,24 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onTOTPForgotP
             }}
           />
 
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '-0.5rem' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', marginTop: '-0.5rem' }}>
+            <Link
+              component="button"
+              type="button"
+              variant="body2"
+              onClick={onEmailForgotPassword}
+              sx={{
+                color: 'primary.main',
+                textDecoration: 'none',
+                fontWeight: '500',
+                fontSize: '0.9rem',
+                '&:hover': {
+                  textDecoration: 'underline',
+                },
+              }}
+            >
+              Reset via Email
+            </Link>
             <Link
               component="button"
               type="button"
@@ -223,7 +242,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToRegister, onTOTPForgotP
                 },
               }}
             >
-              Forgot Password?
+              Reset via Authenticator
             </Link>
           </Box>
 
