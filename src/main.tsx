@@ -43,6 +43,16 @@ const App = () => {
         </Routes>
       </BrowserRouter>
     )
+  } else if (hasResetToken) {
+    // Allow reset-password on main domain if there's a token
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="*" element={<ResetPasswordPage />} />
+        </Routes>
+      </BrowserRouter>
+    )
   } else {
     return (<>404 - Not Found</>)
   }
