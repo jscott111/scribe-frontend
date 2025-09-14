@@ -71,9 +71,10 @@ jobs:
         run: |
           git add package.json CHANGELOG.md
           git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
-          # Ensure prod branch exists and push
+          # Fetch prod branch and handle conflicts
           git fetch origin prod || true
-          git push origin HEAD:prod
+          # Force push to prod branch (this overwrites any conflicts)
+          git push origin HEAD:prod --force
 
       - name: Create Release
         uses: actions/create-release@v1
