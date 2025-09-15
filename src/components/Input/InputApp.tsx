@@ -161,17 +161,19 @@ function InputApp() {
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [speechRecognitionStatus, setSpeechRecognitionStatus] = useState<'idle' | 'listening' | 'error' | 'timeout'>('idle')
   
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const restartTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastActivityRef = React.useRef<number>(Date.now())
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, forceNewSessionId, generateSessionId } = useSession()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
 
-  // Generate session ID when user logs in but doesn't have one
   useEffect(() => {
     if (tokens && user && !sessionId) {
       console.log('🔗 User logged in without session ID, generating new one')
@@ -219,7 +221,6 @@ function InputApp() {
     setIsSocketConnecting(true)
     setIsSocketConnected(false)
 
-    // Clean up existing socket
     if (socketRef.current) {
       socketRef.current.disconnect()
       socketRef.current = null
@@ -242,16 +243,14 @@ function InputApp() {
       setIsSocketConnected(true)
       socketRef.current?.emit('getConnectionCount')
       
-      // Set up periodic connection count refresh
       const intervalId = setInterval(() => {
         if (socketRef.current?.connected) {
           socketRef.current.emit('getConnectionCount')
         } else {
           clearInterval(intervalId)
         }
-      }, 5000) // Refresh every 5 seconds
+      }, 5000)
       
-      // Store interval ID for cleanup
       ;(socketRef.current as any).connectionCountInterval = intervalId
     })
 
@@ -305,7 +304,6 @@ function InputApp() {
       console.error('❌ Socket error:', error)
     })
 
-    // Handle token expiration
     socketRef.current.on('tokenExpired', (data) => {
       console.log('🔌 Token expired, attempting refresh')
       if (tokens.refreshToken) {
@@ -315,7 +313,6 @@ function InputApp() {
       }
     })
 
-    // Handle successful token refresh
     socketRef.current.on('tokenRefreshed', (data) => {
       console.log('🔌 Token refreshed successfully')
       if (updateTokens) {
@@ -326,7 +323,6 @@ function InputApp() {
       }
     })
 
-    // Handle token refresh error
     socketRef.current.on('tokenRefreshError', (data) => {
       console.error('❌ Token refresh failed:', data)
       if (logout) {
@@ -337,7 +333,6 @@ function InputApp() {
     return () => {
       if (socketRef.current) {
         console.log('🔌 Cleaning up socket connection')
-        // Clear the connection count interval
         if ((socketRef.current as any).connectionCountInterval) {
           clearInterval((socketRef.current as any).connectionCountInterval)
         }
@@ -347,7 +342,74 @@ function InputApp() {
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
     }
-  }, [tokens, sessionId]) // Include dependencies
+  }, [tokens, sessionId])
+
+  const startSpeechRecognition = () => {
+    if (!recognitionRef.current || !shouldBeListening) return
+
+    try {
+      console.log('🎤 Starting speech recognition...')
+      recognitionRef.current.start()
+      setSpeechRecognitionStatus('listening')
+      lastActivityRef.current = Date.now()
+    } catch (error) {
+      console.error('🎤 Failed to start speech recognition:', error)
+      setSpeechRecognitionStatus('error')
+      
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current)
+      }
+      restartTimeoutRef.current = setTimeout(() => {
+        if (shouldBeListening) {
+          startSpeechRecognition()
+        }
+      }, 2000)
+    }
+  }
+
+  const stopSpeechRecognition = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch (error) {
+        console.error('🎤 Error stopping speech recognition:', error)
+      }
+    }
+    setSpeechRecognitionStatus('idle')
+  }
+
+  const restartSpeechRecognition = () => {
+    if (!shouldBeListening) return
+    
+    console.log('🔄 Restarting speech recognition...')
+    stopSpeechRecognition()
+    
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current)
+    }
+    restartTimeoutRef.current = setTimeout(() => {
+      if (shouldBeListening) {
+        startSpeechRecognition()
+      }
+    }, 500)
+  }
+
+  useEffect(() => {
+    if (!shouldBeListening) return
+
+    const checkTimeout = () => {
+      const timeSinceLastActivity = Date.now() - lastActivityRef.current
+      const timeoutThreshold = 4 * 60 * 1000
+      
+      if (timeSinceLastActivity > timeoutThreshold) {
+        setSpeechRecognitionStatus('timeout')
+        restartSpeechRecognition()
+      }
+    }
+
+    const interval = setInterval(checkTimeout, 30000)
+    return () => clearInterval(interval)
+  }, [shouldBeListening])
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -367,13 +429,16 @@ function InputApp() {
     recognitionRef.current.continuous = true
     recognitionRef.current.interimResults = true
     recognitionRef.current.lang = sourceLanguage
+    recognitionRef.current.maxAlternatives = 1
 
     recognitionRef.current.onstart = () => {
       setIsTranslating(true)
-      setShouldBeListening(true)
+      setSpeechRecognitionStatus('listening')
+      lastActivityRef.current = Date.now()
     }
 
     recognitionRef.current.onresult = (event) => {
+      lastActivityRef.current = Date.now()
       let finalTranscript = ''
       let interimTranscript = ''
 
@@ -425,20 +490,20 @@ function InputApp() {
     }
 
     recognitionRef.current.onerror = (event) => {
-      console.error('🎤 Speech recognition error:', event.error)
       setIsTranslating(false)
+      setSpeechRecognitionStatus('error')
       
-      // On mobile, some errors are recoverable - try to restart after a short delay
-      if (event.error === 'no-speech' || event.error === 'audio-capture' || event.error === 'not-allowed') {
-        setTimeout(() => {
-          if (recognitionRef.current && shouldBeListening && !isTranslating) {
-            try {
-              recognitionRef.current.start()
-            } catch (err) {
-              console.error('🎤 Failed to restart speech recognition:', err)
-            }
-          }
-        }, 1000)
+      if (event.error === 'no-speech' || event.error === 'audio-capture') {
+        if (shouldBeListening) {
+          restartSpeechRecognition()
+        }
+      } else if (event.error === 'not-allowed') {
+        setSpeechRecognitionStatus('error')
+        console.error('🎤 Microphone permission denied')
+      } else if (event.error === 'network') {
+        if (shouldBeListening) {
+          restartSpeechRecognition()
+        }
       }
     }
 
@@ -446,16 +511,14 @@ function InputApp() {
       setIsTranslating(false)
       
       if (shouldBeListening) {
-        setTimeout(() => {
-          if (recognitionRef.current && shouldBeListening && !isTranslating) {
-            try {
-              recognitionRef.current.start()
-            } catch (err) {
-              console.error('🎤 Failed to restart speech recognition after end:', err)
-            }
-          }
-        }, 100)
+        restartSpeechRecognition()
+      } else {
+        setSpeechRecognitionStatus('idle')
       }
+    }
+
+    if (shouldBeListening) {
+      startSpeechRecognition()
     }
 
     return () => {
@@ -467,8 +530,12 @@ function InputApp() {
         clearTimeout(timeoutRef.current)
         timeoutRef.current = null
       }
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current)
+        restartTimeoutRef.current = null
+      }
     }
-  }, [sourceLanguage, tokens, sessionId])
+  }, [sourceLanguage, tokens, sessionId, shouldBeListening])
 
   const downloadQRCode = () => {
     if (qrCodeRef.current) {
@@ -674,20 +741,32 @@ function InputApp() {
               if (isTranslating) {
                 console.log('🎤 Stopping speech recognition')
                 setShouldBeListening(false)
-                if (recognitionRef.current) {
-                  recognitionRef.current.stop()
-                }
+                stopSpeechRecognition()
               } else {
                 console.log('🎤 Starting speech recognition')
                 setShouldBeListening(true)
-                if (recognitionRef.current) {
-                  recognitionRef.current.start()
-                }
+                startSpeechRecognition()
               }
             }}
           >
             {isTranslating ? 'Translating...' : 'Translate'}
           </Button>
+          
+          {shouldBeListening && (
+            <Box sx={{ marginTop: '1rem', textAlign: 'center' }}>
+              <Typography variant="captionText" sx={{ 
+                color: speechRecognitionStatus === 'listening' ? 'success.main' : 
+                       speechRecognitionStatus === 'error' ? 'error.main' :
+                       speechRecognitionStatus === 'timeout' ? 'warning.main' : 'text.secondary',
+                fontSize: '0.8rem'
+              }}>
+                {speechRecognitionStatus === 'listening' && '🎤 Listening...'}
+                {speechRecognitionStatus === 'error' && '❌ Error - Click to restart'}
+                {speechRecognitionStatus === 'timeout' && '⏰ Restarting...'}
+                {speechRecognitionStatus === 'idle' && '⏸️ Paused'}
+              </Typography>
+            </Box>
+          )}
           <QRCodeSection>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
               Audience Access
@@ -792,15 +871,11 @@ function InputApp() {
                   if (isTranslating) {
                     console.log('🎤 Stopping speech recognition')
                     setShouldBeListening(false)
-                    if (recognitionRef.current) {
-                      recognitionRef.current.stop()
-                    }
+                    stopSpeechRecognition()
                   } else {
                     console.log('🎤 Starting speech recognition')
                     setShouldBeListening(true)
-                    if (recognitionRef.current) {
-                      recognitionRef.current.start()
-                    }
+                    startSpeechRecognition()
                   }
                 }}
               >
