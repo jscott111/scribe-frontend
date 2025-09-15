@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import LanguageSelector from '../../components/LanguageSelector'
+import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
@@ -161,6 +162,7 @@ function InputApp() {
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -381,6 +383,11 @@ function InputApp() {
     recognitionRef.current.continuous = true
     recognitionRef.current.interimResults = true
     recognitionRef.current.lang = sourceLanguage
+    
+    // Set the audio input device if one is selected
+    if (selectedDeviceId) {
+      recognitionRef.current.audioInputDevice = selectedDeviceId
+    }
 
     recognitionRef.current.onstart = () => {
       setIsTranslating(true)
@@ -466,7 +473,7 @@ function InputApp() {
         timeoutRef.current = null
       }
     }
-  }, [sourceLanguage, tokens, sessionId, shouldBeListening])
+  }, [sourceLanguage, tokens, sessionId, shouldBeListening, selectedDeviceId])
 
   const downloadQRCode = () => {
     if (qrCodeRef.current) {
@@ -686,6 +693,13 @@ function InputApp() {
             selectedLanguage={sourceLanguage}
             onLanguageChange={setSourceLanguage}
           />
+          <Box sx={{ marginTop: '1rem' }}>
+            <DeviceSelector
+              selectedDeviceId={selectedDeviceId}
+              onDeviceChange={setSelectedDeviceId}
+              disabled={isTranslating}
+            />
+          </Box>
           <Button
             variant="contained"
             color="primary"
@@ -764,6 +778,13 @@ function InputApp() {
                   label="Source Language"
                   selectedLanguage={sourceLanguage}
                   onLanguageChange={setSourceLanguage}
+                />
+              </Box>
+              <Box sx={{ marginTop: '1rem', width: '100%' }}>
+                <DeviceSelector
+                  selectedDeviceId={selectedDeviceId}
+                  onDeviceChange={setSelectedDeviceId}
+                  disabled={isTranslating}
                 />
               </Box>
               <Button
