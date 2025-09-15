@@ -1,30 +1,17 @@
-# Frontend Changelog
+# [0.0.0](https://github.com/jscott111/scribe-frontend/compare/v1.1.1...v0.0.0) (2025-09-15)
 
-All notable changes to the Scribe Frontend will be documented in this file. See [conventional commits](https://conventionalcommits.org) for commit guidelines.
 
-## [Unreleased]
 
-### Added
-- Initial release management setup for frontend
-- Automated version bumping based on conventional commits
-- GitHub Actions workflows for frontend releases
+## [1.1.1](https://github.com/jscott111/scribe-frontend/compare/v1.1.0...v1.1.1) (2025-09-14)
 
-### Changed
 
-### Fixed
+### Bug Fixes
 
-### Security
+* for the reset link in prod ([26b1e80](https://github.com/jscott111/scribe-frontend/commit/26b1e803ab3f8486636b7c67946e194008a33bda))
 
----
 
-## [frontend-v1.0.0] - 2025-01-09
 
-### Added
-- Initial release of Scribe Frontend
-- React-based user interface
-- Audio recording and playback capabilities
-- Real-time translation interface
-- User authentication forms
-- Profile management
-- TOTP setup and management
-- Responsive design
+# 1.1.0 (2025-09-14)
+
+
+
