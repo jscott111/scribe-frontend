@@ -161,13 +161,10 @@ function InputApp() {
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
-  const [speechRecognitionStatus, setSpeechRecognitionStatus] = useState<'idle' | 'listening' | 'error' | 'timeout'>('idle')
-  
   const socketRef = React.useRef<Socket | null>(null)
   const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const restartTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastActivityRef = React.useRef<number>(Date.now())
+  const userStoppedRef = React.useRef<boolean>(false)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, forceNewSessionId, generateSessionId } = useSession()
@@ -347,69 +344,24 @@ function InputApp() {
   const startSpeechRecognition = () => {
     if (!recognitionRef.current || !shouldBeListening) return
 
+    userStoppedRef.current = false
     try {
-      console.log('🎤 Starting speech recognition...')
       recognitionRef.current.start()
-      setSpeechRecognitionStatus('listening')
-      lastActivityRef.current = Date.now()
     } catch (error) {
-      console.error('🎤 Failed to start speech recognition:', error)
-      setSpeechRecognitionStatus('error')
-      
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current)
-      }
-      restartTimeoutRef.current = setTimeout(() => {
-        if (shouldBeListening) {
-          startSpeechRecognition()
-        }
-      }, 2000)
+      // Silent error handling
     }
   }
 
   const stopSpeechRecognition = () => {
+    userStoppedRef.current = true
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop()
       } catch (error) {
-        console.error('🎤 Error stopping speech recognition:', error)
+        // Silent error handling
       }
     }
-    setSpeechRecognitionStatus('idle')
   }
-
-  const restartSpeechRecognition = () => {
-    if (!shouldBeListening) return
-    
-    console.log('🔄 Restarting speech recognition...')
-    stopSpeechRecognition()
-    
-    if (restartTimeoutRef.current) {
-      clearTimeout(restartTimeoutRef.current)
-    }
-    restartTimeoutRef.current = setTimeout(() => {
-      if (shouldBeListening) {
-        startSpeechRecognition()
-      }
-    }, 500)
-  }
-
-  useEffect(() => {
-    if (!shouldBeListening) return
-
-    const checkTimeout = () => {
-      const timeSinceLastActivity = Date.now() - lastActivityRef.current
-      const timeoutThreshold = 4 * 60 * 1000
-      
-      if (timeSinceLastActivity > timeoutThreshold) {
-        setSpeechRecognitionStatus('timeout')
-        restartSpeechRecognition()
-      }
-    }
-
-    const interval = setInterval(checkTimeout, 30000)
-    return () => clearInterval(interval)
-  }, [shouldBeListening])
 
   useEffect(() => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -429,16 +381,12 @@ function InputApp() {
     recognitionRef.current.continuous = true
     recognitionRef.current.interimResults = true
     recognitionRef.current.lang = sourceLanguage
-    recognitionRef.current.maxAlternatives = 1
 
     recognitionRef.current.onstart = () => {
       setIsTranslating(true)
-      setSpeechRecognitionStatus('listening')
-      lastActivityRef.current = Date.now()
     }
 
     recognitionRef.current.onresult = (event) => {
-      lastActivityRef.current = Date.now()
       let finalTranscript = ''
       let interimTranscript = ''
 
@@ -468,8 +416,6 @@ function InputApp() {
             sourceLanguage,
             bubbleId: newBubble.id
           })
-        } else {
-          console.error('❌ Socket not connected, cannot emit transcription')
         }
         
         if (timeoutRef.current) {
@@ -491,29 +437,18 @@ function InputApp() {
 
     recognitionRef.current.onerror = (event) => {
       setIsTranslating(false)
-      setSpeechRecognitionStatus('error')
-      
-      if (event.error === 'no-speech' || event.error === 'audio-capture') {
-        if (shouldBeListening) {
-          restartSpeechRecognition()
-        }
-      } else if (event.error === 'not-allowed') {
-        setSpeechRecognitionStatus('error')
-        console.error('🎤 Microphone permission denied')
-      } else if (event.error === 'network') {
-        if (shouldBeListening) {
-          restartSpeechRecognition()
-        }
-      }
     }
 
     recognitionRef.current.onend = () => {
       setIsTranslating(false)
       
-      if (shouldBeListening) {
-        restartSpeechRecognition()
-      } else {
-        setSpeechRecognitionStatus('idle')
+      // Only restart if we should be listening AND user didn't manually stop
+      if (shouldBeListening && !userStoppedRef.current) {
+        setTimeout(() => {
+          if (shouldBeListening && !userStoppedRef.current && recognitionRef.current) {
+            startSpeechRecognition()
+          }
+        }, 100)
       }
     }
 
@@ -529,10 +464,6 @@ function InputApp() {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
         timeoutRef.current = null
-      }
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current)
-        restartTimeoutRef.current = null
       }
     }
   }, [sourceLanguage, tokens, sessionId, shouldBeListening])
@@ -739,11 +670,9 @@ function InputApp() {
             }}
             onClick={() => {
               if (isTranslating) {
-                console.log('🎤 Stopping speech recognition')
                 setShouldBeListening(false)
                 stopSpeechRecognition()
               } else {
-                console.log('🎤 Starting speech recognition')
                 setShouldBeListening(true)
                 startSpeechRecognition()
               }
@@ -751,22 +680,6 @@ function InputApp() {
           >
             {isTranslating ? 'Translating...' : 'Translate'}
           </Button>
-          
-          {shouldBeListening && (
-            <Box sx={{ marginTop: '1rem', textAlign: 'center' }}>
-              <Typography variant="captionText" sx={{ 
-                color: speechRecognitionStatus === 'listening' ? 'success.main' : 
-                       speechRecognitionStatus === 'error' ? 'error.main' :
-                       speechRecognitionStatus === 'timeout' ? 'warning.main' : 'text.secondary',
-                fontSize: '0.8rem'
-              }}>
-                {speechRecognitionStatus === 'listening' && '🎤 Listening...'}
-                {speechRecognitionStatus === 'error' && '❌ Error - Click to restart'}
-                {speechRecognitionStatus === 'timeout' && '⏰ Restarting...'}
-                {speechRecognitionStatus === 'idle' && '⏸️ Paused'}
-              </Typography>
-            </Box>
-          )}
           <QRCodeSection>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
               Audience Access
@@ -869,11 +782,9 @@ function InputApp() {
                 }}
                 onClick={() => {
                   if (isTranslating) {
-                    console.log('🎤 Stopping speech recognition')
                     setShouldBeListening(false)
                     stopSpeechRecognition()
                   } else {
-                    console.log('🎤 Starting speech recognition')
                     setShouldBeListening(true)
                     startSpeechRecognition()
                   }
@@ -994,3 +905,4 @@ function InputApp() {
 }
 
 export default InputApp
+
