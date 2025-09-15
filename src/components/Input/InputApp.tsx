@@ -311,7 +311,7 @@ function InputApp() {
     })
 
     socketRef.current.on('tokenRefreshed', (data) => {
-      console.log('🔌 Token refreshed successfully')
+      console.log('🔌 Socket token refreshed successfully')
       if (updateTokens) {
         updateTokens({
           accessToken: data.accessToken,

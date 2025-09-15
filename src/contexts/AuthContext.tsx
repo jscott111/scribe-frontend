@@ -147,6 +147,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, [tokens, user])
 
+  useEffect(() => {
+    if (!tokens?.accessToken) return
+
+    const parseJWT = (token: string) => {
+      try {
+        const base64Url = token.split('.')[1]
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+        const jsonPayload = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        )
+        return JSON.parse(jsonPayload)
+      } catch (error) {
+        console.error('Error parsing JWT:', error)
+        return null
+      }
+    }
+
+    const tokenData = parseJWT(tokens.accessToken)
+    if (!tokenData?.exp) return
+
+    const expirationTime = tokenData.exp * 1000
+    const currentTime = Date.now()
+    const timeUntilExpiry = expirationTime - currentTime
+
+    const twoHoursInMs = 2 * 60 * 60 * 1000
+    if (timeUntilExpiry > twoHoursInMs) {
+      console.log(`🔄 Token expires in ${Math.round(timeUntilExpiry / 1000 / 60 / 60)} hours - no refresh needed yet`)
+      return
+    }
+
+    const refreshTime = Math.max(timeUntilExpiry - (30 * 60 * 1000), 60000)
+
+    console.log(`🔄 Token expires in ${Math.round(timeUntilExpiry / 1000 / 60)} minutes, will refresh in ${Math.round(refreshTime / 1000 / 60)} minutes`)
+
+    const refreshTimer = setTimeout(async () => {
+      console.log('🔄 Proactively refreshing token...')
+      const success = await refreshToken()
+      if (!success) {
+        console.error('❌ Proactive token refresh failed')
+        logout()
+      }
+    }, refreshTime)
+
+    return () => {
+      clearTimeout(refreshTimer)
+    }
+  }, [tokens?.accessToken, refreshToken, logout])
+
   const login = async (email: string, password: string): Promise<void> => {
     try {
       const response = await fetch(`${CONFIG.BACKEND_URL}/auth/login`, {
