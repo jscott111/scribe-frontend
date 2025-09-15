@@ -196,7 +196,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       clearTimeout(refreshTimer)
     }
-  }, [tokens?.accessToken, refreshToken, logout])
+  }, [tokens?.accessToken])
 
   const login = async (email: string, password: string): Promise<void> => {
     try {

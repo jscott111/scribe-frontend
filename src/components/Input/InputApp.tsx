@@ -60,15 +60,16 @@ const MobileHeaderRight = styled.div`
 `
 
 const LeftPanel = styled(Paper)`
-  max-width: 30%;
-  min-width: 20%;
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
   border-radius: 2rem !important;
   margin: 1rem;
   margin-right: 0.5rem;
   padding: 1rem;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex-shrink: 0;
   height: calc(100% - 2rem);
 `
 
@@ -79,9 +80,8 @@ const RightPanel = styled(Paper)<{ isMobile: boolean }>`
     height: 100%;
     border-radius: 1rem !important;
   ` : `
-    flex: 1 1 70%;
-    max-width: 80%;
-    min-width: 70%;
+    flex: 1;
+    min-width: 250px;
     height: calc(100% - 2rem);
     border-radius: 2rem !important;
     margin: 1rem;
@@ -169,7 +169,7 @@ function InputApp() {
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, forceNewSessionId, generateSessionId } = useSession()
   const theme = useTheme()
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'))
+  const isMobile = useMediaQuery('(max-width: 850px)')
 
   useEffect(() => {
     if (tokens && user && !sessionId) {
@@ -527,9 +527,34 @@ function InputApp() {
                   style={{ height: '100%', width: 'auto' }}
                 />
               </Box>
-              <Typography variant="bodyText" sx={{ color: 'text.secondary', fontSize: '0.8rem' }}>
-                {user?.name}
-              </Typography>
+              <Tooltip title="View Profile" arrow placement="bottom">
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '0.5rem',
+                    cursor: 'pointer',
+                    padding: '0.25rem',
+                    borderRadius: '0.5rem',
+                    '&:hover': {
+                      backgroundColor: 'rgba(210, 180, 140, 0.1)',
+                      transform: 'scale(1.02)'
+                    },
+                    transition: 'all 0.2s ease-in-out'
+                  }}
+                  onClick={() => setProfileModalOpen(true)}
+                >
+                  <AccountBoxIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+                  <Typography variant="bodyText" sx={{ 
+                    color: 'text.secondary', 
+                    fontSize: '0.8rem',
+                    display: 'flex', 
+                    alignItems: 'center'
+                  }}>
+                    {user?.name}
+                  </Typography>
+                </Box>
+              </Tooltip>
             </Box>
           </MobileHeaderLeft>
           
@@ -543,7 +568,7 @@ function InputApp() {
               </Box>
             ) : (
               <Chip
-                label={`${connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
+                label={`${connectionCount.total - 1 < 0 ? 'No' : connectionCount.total - 1} connection${connectionCount.total - 1 === 1 ? '' : 's'}`}
                 color={isSocketConnected ? "primary" : "error"}
                 variant="outlined"
                 size="small"
@@ -720,28 +745,11 @@ function InputApp() {
             <Button
               variant="outlined"
               size="small"
-              startIcon={<QrCodeIcon />}
-              onClick={() => setQrModalOpen(true)}
-              sx={{ marginTop: '0.5rem', marginRight: '0.5rem' }}
-            >
-              Show QR Code
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
               startIcon={<DownloadIcon />}
               onClick={downloadQRCode}
-              sx={{ marginTop: '0.5rem', marginRight: '0.5rem' }}
-            >
-              Download QR Code
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleGenerateNewSession}
               sx={{ marginTop: '0.5rem' }}
             >
-              New Session
+              Download QR Code
             </Button>
           </QRCodeSection>
         </LeftPanel>
@@ -899,6 +907,7 @@ function InputApp() {
         sessionId={sessionId}
         isSocketConnected={isSocketConnected}
         onLogout={logout}
+        onNewSession={handleGenerateNewSession}
       />
     </MainContainer>
   )

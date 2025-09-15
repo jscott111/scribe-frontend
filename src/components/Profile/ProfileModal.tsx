@@ -14,8 +14,10 @@ import {
 } from '@mui/material'
 import LogoutIcon from '@mui/icons-material/Logout'
 import SecurityIcon from '@mui/icons-material/Security'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import Typography from '../UI/Typography'
 import TOTPSetupModal from './TOTPSetupModal'
+import ConfirmationDialog from '../UI/ConfirmationDialog'
 
 interface User {
   id: number
@@ -33,6 +35,7 @@ interface ProfileModalProps {
   sessionId: string | null
   isSocketConnected: boolean
   onLogout: () => void
+  onNewSession: () => void
 }
 
 const ProfileModal: React.FC<ProfileModalProps> = ({
@@ -41,11 +44,13 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   user,
   sessionId,
   isSocketConnected,
-  onLogout
+  onLogout,
+  onNewSession
 }) => {
   const [totpSetupOpen, setTotpSetupOpen] = useState(false)
   const [totpEnabled, setTotpEnabled] = useState(user?.totpEnabled || false)
   const [error, setError] = useState<string | null>(null)
+  const [newSessionConfirmOpen, setNewSessionConfirmOpen] = useState(false)
 
   // Update TOTP status when user data changes
   useEffect(() => {
@@ -54,6 +59,15 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   const handleLogout = () => {
     onClose()
     onLogout()
+  }
+
+  const handleNewSession = () => {
+    setNewSessionConfirmOpen(true)
+  }
+
+  const confirmNewSession = () => {
+    onNewSession()
+    onClose()
   }
 
   return (
@@ -123,9 +137,18 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
                    <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '0.25rem' }}>
                      <strong>Current Session:</strong> {sessionId}
                    </Typography>
-                   <Typography variant="bodyText" sx={{ color: 'text.secondary' }}>
+                   <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '1rem' }}>
                      <strong>Status:</strong> {isSocketConnected ? 'Connected' : 'Disconnected'}
                    </Typography>
+                   <Button
+                     variant="outlined"
+                     color="warning"
+                     startIcon={<RefreshIcon />}
+                     onClick={handleNewSession}
+                     sx={{ borderRadius: '2rem' }}
+                   >
+                     New Session
+                   </Button>
                  </Box>
                  
                  <Box>
@@ -193,6 +216,17 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           setError(null)
         }}
         user={user}
+      />
+      
+      <ConfirmationDialog
+        open={newSessionConfirmOpen}
+        onClose={() => setNewSessionConfirmOpen(false)}
+        onConfirm={confirmNewSession}
+        title="Create New Session"
+        message="Creating a new session will generate a new QR code and link. Your current audience will need to scan the new QR code or use the new link to continue receiving translations. Are you sure you want to create a new session?"
+        confirmText="Create New Session"
+        cancelText="Keep Current Session"
+        confirmColor="warning"
       />
     </Dialog>
   )
