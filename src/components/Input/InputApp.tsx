@@ -16,6 +16,7 @@ import { CONFIG } from '../../config/urls'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSession } from '../../contexts/SessionContext'
 import ProfileModal from '../Profile/ProfileModal'
+import { useDeepgramSpeechRecognition } from '../../hooks/useDeepgramSpeechRecognition'
 
 interface MessageBubble {
   id: string
@@ -158,20 +159,95 @@ function InputApp() {
   const [shouldBeListening, setShouldBeListening] = useState(false)
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
+  
+  // Debug current transcription changes
+  useEffect(() => {
+    console.log('🔄 Current transcription state changed to:', currentTranscription)
+  }, [currentTranscription])
+
+  // Clean up current transcription when stopping
+  useEffect(() => {
+    if (!isTranslating && currentTranscription) {
+      console.log('🧹 Cleaning up current transcription on stop')
+      setCurrentTranscription('')
+    }
+  }, [isTranslating, currentTranscription])
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const socketRef = React.useRef<Socket | null>(null)
-  const recognitionRef = React.useRef<any>(null)
-  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const userStoppedRef = React.useRef<boolean>(false)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, forceNewSessionId, generateSessionId } = useSession()
   const theme = useTheme()
   const isMobile = useMediaQuery('(max-width: 850px)')
+
+  // Deepgram speech recognition
+  const {
+    isListening: isDeepgramListening,
+    isConnecting: isDeepgramConnecting,
+    error: deepgramError,
+    startListening: startDeepgramListening,
+    stopListening: stopDeepgramListening,
+    updateContext: updateDeepgramContext
+  } = useDeepgramSpeechRecognition({
+    language: sourceLanguage,
+    selectedDeviceId,
+      onTranscription: (text, isFinal, confidence) => {
+        console.log('🎯 InputApp received transcription:', { text, isFinal, confidence, currentTranscription })
+        
+        if (isFinal && text.trim()) {
+          console.log('✅ FINAL TRANSCRIPTION - Creating new bubble:', text)
+          console.log('✅ Current transcription before clearing:', currentTranscription)
+          
+          // Use the actual text received from Deepgram, not the state
+          const newBubble: MessageBubble = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            text: text.trim(),
+            timestamp: new Date(),
+            isComplete: true // Mark as complete immediately
+          }
+          
+          setTranscriptionBubbles(prev => {
+            console.log('✅ Adding new bubble to list:', newBubble.text)
+            return [...prev, newBubble]
+          })
+          
+          if (socketRef.current && socketRef.current.connected) {
+            socketRef.current.emit('speechTranscription', {
+              transcription: text.trim(),
+              sourceLanguage,
+              bubbleId: newBubble.id
+            })
+          }
+          
+          // Update Deepgram context with recent transcriptions
+          const recentTranscriptions = transcriptionBubbles
+            .slice(-5)
+            .map(bubble => bubble.text)
+            .concat([text.trim()])
+          updateDeepgramContext(recentTranscriptions)
+          
+          // Clear current transcription and start fresh
+          console.log('✅ Clearing current transcription')
+          setCurrentTranscription('')
+        } else if (text.trim()) {
+          console.log('🔄 INTERIM TRANSCRIPTION - Updating current bubble:', text)
+          console.log('🔄 Previous current transcription:', currentTranscription)
+          
+          // Always update current transcription for interim results
+          setCurrentTranscription(text.trim())
+        } else {
+          console.log('⚠️ Received empty or invalid transcription:', { text, isFinal, confidence })
+        }
+      },
+    onError: (error) => {
+      console.error('Deepgram error:', error)
+      setIsTranslating(false)
+    }
+  })
 
   useEffect(() => {
     if (tokens && user && !sessionId) {
@@ -265,7 +341,6 @@ function InputApp() {
     })
 
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
-      console.log('🔌 Received connectionCount:', data)
       setConnectionCount(data)
     })
 
@@ -343,137 +418,44 @@ function InputApp() {
     }
   }, [tokens, sessionId])
 
-  const startSpeechRecognition = () => {
-    if (!recognitionRef.current || !shouldBeListening) return
-
-    userStoppedRef.current = false
+  const startSpeechRecognition = async () => {
+    console.log('startSpeechRecognition called, shouldBeListening:', shouldBeListening)
+    if (!shouldBeListening) {
+      console.log('Not starting because shouldBeListening is false')
+      return
+    }
+    
+    console.log('Initializing speech recognition...')
     try {
-      recognitionRef.current.start()
+      console.log('Calling startDeepgramListening...')
+      await startDeepgramListening()
+      console.log('Speech recognition started successfully')
     } catch (error) {
-      // Silent error handling
+      console.error('Error starting speech recognition:', error)
+      setIsTranslating(false)
+      setShouldBeListening(false)
     }
   }
 
   const stopSpeechRecognition = () => {
-    userStoppedRef.current = true
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-      } catch (error) {
-        // Silent error handling
-      }
-    }
+    stopDeepgramListening()
   }
 
+  // Update isTranslating based on Deepgram state
   useEffect(() => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      console.error('❌ Speech recognition not supported')
-      return
-    }
+    setIsTranslating(isDeepgramListening)
+  }, [isDeepgramListening])
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
-    }
-
-    const SpeechRecognitionClass =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    recognitionRef.current = new SpeechRecognitionClass()
-
-    recognitionRef.current.continuous = true
-    recognitionRef.current.interimResults = true
-    recognitionRef.current.lang = sourceLanguage
-    
-    // Set the audio input device if one is selected
-    if (selectedDeviceId) {
-      recognitionRef.current.audioInputDevice = selectedDeviceId
-    }
-
-    recognitionRef.current.onstart = () => {
-      setIsTranslating(true)
-    }
-
-    recognitionRef.current.onresult = (event) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript
-        } else {
-          interimTranscript += transcript
-        }
-      }
-
-      if (finalTranscript.trim()) {
-        const newBubble: MessageBubble = {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-          text: finalTranscript.trim(),
-          timestamp: new Date(),
-          isComplete: false
-        }
-        
-        setTranscriptionBubbles(prev => [...prev, newBubble])
-        setCurrentTranscription('')
-        
-        if (socketRef.current && socketRef.current.connected) {
-          socketRef.current.emit('speechTranscription', {
-            transcription: finalTranscript.trim(),
-            sourceLanguage,
-            bubbleId: newBubble.id
-          })
-        }
-        
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current)
-        }
-        timeoutRef.current = setTimeout(() => {
-          setTranscriptionBubbles((prev) =>
-            prev.map((bubble) =>
-              bubble.id === newBubble.id
-                ? { ...bubble, isComplete: true }
-                : bubble
-            )
-          )
-        }, 250)
-      } else if (interimTranscript.trim()) {
-        setCurrentTranscription(interimTranscript.trim())
-      }
-    }
-
-    recognitionRef.current.onerror = (event) => {
+  // Handle Deepgram errors
+  useEffect(() => {
+    if (deepgramError) {
+      console.error('Deepgram error:', deepgramError)
       setIsTranslating(false)
     }
+  }, [deepgramError])
 
-    recognitionRef.current.onend = () => {
-      setIsTranslating(false)
-      
-      // Only restart if we should be listening AND user didn't manually stop
-      if (shouldBeListening && !userStoppedRef.current) {
-        setTimeout(() => {
-          if (shouldBeListening && !userStoppedRef.current && recognitionRef.current) {
-            startSpeechRecognition()
-          }
-        }, 100)
-      }
-    }
-
-    if (shouldBeListening) {
-      startSpeechRecognition()
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-        recognitionRef.current = null
-      }
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-      }
-    }
-  }, [sourceLanguage, tokens, sessionId, shouldBeListening, selectedDeviceId])
+  // Remove the automatic start/stop useEffect to prevent infinite loops
+  // Speech recognition is now controlled directly by button clicks
 
   const downloadQRCode = () => {
     if (qrCodeRef.current) {
@@ -703,21 +685,40 @@ function InputApp() {
           <Button
             variant="contained"
             color="primary"
+            disabled={isDeepgramConnecting}
             sx={{
               borderRadius: '2rem',
               marginTop: '2rem'
             }}
-            onClick={() => {
+            onClick={async () => {
               if (isTranslating) {
+                console.log('Stopping translation...')
                 setShouldBeListening(false)
+                setIsTranslating(false)
                 stopSpeechRecognition()
               } else {
+                console.log('Starting translation...')
                 setShouldBeListening(true)
-                startSpeechRecognition()
+                setIsTranslating(true)
+                
+                // Call speech recognition directly instead of relying on state
+                console.log('Initializing speech recognition...')
+                try {
+                  console.log('Calling startDeepgramListening...')
+                  console.log('Deepgram state before start:', { isDeepgramConnecting, isDeepgramListening, deepgramError })
+                  await startDeepgramListening()
+                  console.log('Speech recognition started successfully')
+                  console.log('Deepgram state after start:', { isDeepgramConnecting, isDeepgramListening, deepgramError })
+                } catch (error) {
+                  console.error('Error starting speech recognition:', error)
+                  console.error('Error details:', error.message, error.stack)
+                  setIsTranslating(false)
+                  setShouldBeListening(false)
+                }
               }
             }}
           >
-            {isTranslating ? 'Translating...' : 'Translate'}
+            {isDeepgramConnecting ? 'Connecting...' : isTranslating ? 'Translating...' : 'Translate'}
           </Button>
           <QRCodeSection>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
@@ -804,22 +805,38 @@ function InputApp() {
                 variant="contained"
                 color="primary"
                 fullWidth
+                disabled={isDeepgramConnecting}
                 sx={{
                   borderRadius: '2rem',
                   marginTop: '1rem',
                   padding: '0.75rem'
                 }}
-                onClick={() => {
+                onClick={async () => {
                   if (isTranslating) {
+                    console.log('Stopping translation...')
                     setShouldBeListening(false)
+                    setIsTranslating(false)
                     stopSpeechRecognition()
                   } else {
+                    console.log('Starting translation...')
                     setShouldBeListening(true)
-                    startSpeechRecognition()
+                    setIsTranslating(true)
+                    
+                    // Call speech recognition directly instead of relying on state
+                    console.log('Initializing speech recognition...')
+                    try {
+                      console.log('Calling startDeepgramListening...')
+                      await startDeepgramListening()
+                      console.log('Speech recognition started successfully')
+                    } catch (error) {
+                      console.error('Error starting speech recognition:', error)
+                      setIsTranslating(false)
+                      setShouldBeListening(false)
+                    }
                   }
                 }}
               >
-                {isTranslating ? 'Translating...' : 'Translate'}
+                {isDeepgramConnecting ? 'Connecting...' : isTranslating ? 'Translating...' : 'Translate'}
               </Button>
             </Box>
           )}
