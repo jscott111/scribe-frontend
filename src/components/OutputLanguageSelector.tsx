@@ -1,15 +1,14 @@
 import React, { useState } from 'react'
-import { LanguageCode, getLanguageInfo, getLanguageFlag, getLanguageName, getSupportedLanguages } from '../enums/azureLangs'
-import styled from 'styled-components'
+import { LanguageCode, getSupportedLanguages } from '../enums/azureLangs'
 import { MenuItem, Select } from '@mui/material'
 
-interface LanguageSelectorProps {
+interface OutputLanguageSelectorProps {
   label: string
   selectedLanguage: LanguageCode
   onLanguageChange: (language: LanguageCode) => void
 }
 
-const LanguageSelector: React.FC<LanguageSelectorProps> = ({
+const OutputLanguageSelector: React.FC<OutputLanguageSelectorProps> = ({
   label,
   selectedLanguage,
   onLanguageChange
@@ -54,4 +53,4 @@ const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   )
 }
 
-export default LanguageSelector
+export default OutputLanguageSelector
