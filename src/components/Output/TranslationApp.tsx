@@ -289,7 +289,13 @@ function TranslationApp() {
       setIsConnected(true)
     })
     
-    socketRef.current.on('disconnect', () => {
+    socketRef.current.on('disconnect', (reason) => {
+      setIsConnecting(false)
+      setIsConnected(false)
+    })
+    
+    socketRef.current.on('connect_error', (error) => {
+      console.error('🔗 TranslationApp - Connection error:', error)
       setIsConnecting(false)
       setIsConnected(false)
     })

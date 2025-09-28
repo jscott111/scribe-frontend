@@ -40,6 +40,7 @@ class GoogleSpeechService {
   private silenceTimer: NodeJS.Timeout | null = null;
   private wordCountTimer: NodeJS.Timeout | null = null;
   private socket: any = null; // Socket.IO connection
+  private hasReceivedFinalResult = false; // Track if we've received a final result from Google Cloud
 
   constructor() {
     this.config = {
@@ -65,15 +66,26 @@ class GoogleSpeechService {
         if (data.isFinal && this.callbacks?.onFinalResult) {
           this.callbacks.onFinalResult({
             transcript: data.transcript,
-            bubbleId: data.bubbleId,
-            confidence: data.confidence
+            isFinal: data.isFinal,
+            confidence: data.confidence,
+            wordCount: this.currentWordCount,
+            bubbleId: data.bubbleId
           });
         } else if (!data.isFinal && this.callbacks?.onInterimResult) {
           this.callbacks.onInterimResult({
             transcript: data.transcript,
-            bubbleId: data.bubbleId,
-            confidence: data.confidence
+            isFinal: data.isFinal,
+            confidence: data.confidence,
+            wordCount: this.currentWordCount,
+            bubbleId: data.bubbleId
           });
+        }
+      });
+      
+      // Listen for final result notifications to prevent duplicate finalization
+      this.socket.on('finalResultReceived', (data: any) => {
+        if (data.bubbleId === this.currentBubbleId) {
+          this.hasReceivedFinalResult = true;
         }
       });
       
@@ -118,6 +130,7 @@ class GoogleSpeechService {
     this.currentBubbleId = this.generateBubbleId();
     this.currentWordCount = 0;
     this.currentTranscript = '';
+    this.hasReceivedFinalResult = false;
 
     try {
       // Set up ScriptProcessorNode for raw PCM audio capture
@@ -227,8 +240,15 @@ class GoogleSpeechService {
    * Clean up resources
    */
   cleanup(): void {
+    console.log('🧹 Cleaning up Google Speech Service...');
+    
     this.stopRecognition();
     this.clearTimers();
+
+    // Notify backend to stop streaming
+    if (this.socket) {
+      this.socket.emit('stopStreaming');
+    }
 
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
@@ -246,6 +266,7 @@ class GoogleSpeechService {
     this.scriptProcessor = null;
     this.callbacks = null;
     this.socket = null;
+    this.hasReceivedFinalResult = false;
   }
 
   // Private methods
@@ -417,18 +438,22 @@ class GoogleSpeechService {
 
   private finalizeCurrentTranscript(): void {
     if (this.currentTranscript.trim() && this.socket) {
-      // Send finalization request to backend
-      this.socket.emit('googleSpeechTranscription', {
-        audioData: '', // No new audio data
-        sourceLanguage: this.config.languageCode,
-        bubbleId: this.currentBubbleId,
-        isFinal: true,
-        interimTranscript: '',
-        finalTranscript: this.currentTranscript.trim(),
-        wordCount: this.currentWordCount,
-        maxWordsPerBubble: this.config.maxWordsPerBubble,
-        speechEndTimeout: this.config.speechEndTimeout
-      });
+      // Only finalize if we haven't already received a final result from Google Cloud
+      // This prevents duplicate finalization when Google Cloud already sent a final result
+      if (!this.hasReceivedFinalResult) {
+        // Send finalization request to backend
+        this.socket.emit('googleSpeechTranscription', {
+          audioData: '', // No new audio data
+          sourceLanguage: this.config.languageCode,
+          bubbleId: this.currentBubbleId,
+          isFinal: true,
+          interimTranscript: '',
+          finalTranscript: this.currentTranscript.trim(),
+          wordCount: this.currentWordCount,
+          maxWordsPerBubble: this.config.maxWordsPerBubble,
+          speechEndTimeout: this.config.speechEndTimeout
+        });
+      }
     }
 
     this.clearTimers();
