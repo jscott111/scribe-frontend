@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react'
-import LanguageSelector from '../../components/LanguageSelector'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
-import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
+import { LanguageCode, getLanguageInfo } from '../../enums/googleLangs'
 import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -16,6 +16,7 @@ import { CONFIG } from '../../config/urls'
 import { useAuth } from '../../contexts/AuthContext'
 import { useSession } from '../../contexts/SessionContext'
 import ProfileModal from '../Profile/ProfileModal'
+import googleSpeechService from '../../services/googleSpeechService'
 
 interface MessageBubble {
   id: string
@@ -152,7 +153,7 @@ const RightPanelContent = styled.div<{ isMobile: boolean }>`
 `
 
 function InputApp() {
-  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN)
+  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN_CA)
   const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
   const [isTranslating, setIsTranslating] = useState(false)
   const [shouldBeListening, setShouldBeListening] = useState(false)
@@ -163,10 +164,13 @@ function InputApp() {
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
+  const [speechConfig, setSpeechConfig] = useState({
+    speechEndTimeout: 1, // Balanced timeout for natural speech patterns
+    maxWordsPerBubble: 15,
+    speechStartTimeout: 5.0
+  })
   const socketRef = React.useRef<Socket | null>(null)
-  const recognitionRef = React.useRef<any>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
-  const userStoppedRef = React.useRef<boolean>(false)
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const { user, tokens, logout, updateTokens } = useAuth()
   const { sessionId, forceNewSessionId, generateSessionId } = useSession()
@@ -253,24 +257,16 @@ function InputApp() {
       ;(socketRef.current as any).connectionCountInterval = intervalId
     })
 
-    socketRef.current.on('transcriptionComplete', (data) => {
-      console.log('🔌 Received transcriptionComplete:', data)
-      setTranscriptionBubbles(prev => 
-        prev.map(bubble => 
-          bubble.id === data.bubbleId 
-            ? { ...bubble, isComplete: true }
-            : bubble
-        )
-      )
+    socketRef.current.on('interimTranscription', (data) => {
+      setCurrentTranscription(data.transcript)
     })
 
+
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
-      console.log('🔌 Received connectionCount:', data)
       setConnectionCount(data)
     })
 
     socketRef.current.on('disconnect', (reason) => {
-      console.log('🔌 Socket disconnected:', reason)
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
     })
@@ -343,137 +339,107 @@ function InputApp() {
     }
   }, [tokens, sessionId])
 
-  const startSpeechRecognition = () => {
-    if (!recognitionRef.current || !shouldBeListening) return
-
-    userStoppedRef.current = false
-    try {
-      recognitionRef.current.start()
-    } catch (error) {
-      // Silent error handling
-    }
-  }
-
-  const stopSpeechRecognition = () => {
-    userStoppedRef.current = true
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-      } catch (error) {
-        // Silent error handling
-      }
-    }
-  }
-
+  // Initialize Google Cloud Speech-to-Text service when socket is connected
   useEffect(() => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      console.error('❌ Speech recognition not supported')
-      return
+    if (isSocketConnected && socketRef.current) {
+      googleSpeechService.initialize(socketRef.current).catch(error => {
+        console.error('❌ Failed to initialize Google Speech Service:', error)
+      })
     }
+  }, [isSocketConnected])
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
-    }
-
-    const SpeechRecognitionClass =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    recognitionRef.current = new SpeechRecognitionClass()
-
-    recognitionRef.current.continuous = true
-    recognitionRef.current.interimResults = true
-    recognitionRef.current.lang = sourceLanguage
-    
-    // Set the audio input device if one is selected
-    if (selectedDeviceId) {
-      recognitionRef.current.audioInputDevice = selectedDeviceId
-    }
-
-    recognitionRef.current.onstart = () => {
-      setIsTranslating(true)
-    }
-
-    recognitionRef.current.onresult = (event) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript
-        } else {
-          interimTranscript += transcript
-        }
-      }
-
-      if (finalTranscript.trim()) {
-        const newBubble: MessageBubble = {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-          text: finalTranscript.trim(),
-          timestamp: new Date(),
-          isComplete: false
-        }
-        
-        setTranscriptionBubbles(prev => [...prev, newBubble])
-        setCurrentTranscription('')
-        
-        if (socketRef.current && socketRef.current.connected) {
-          socketRef.current.emit('speechTranscription', {
-            transcription: finalTranscript.trim(),
-            sourceLanguage,
-            bubbleId: newBubble.id
-          })
-        }
-        
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current)
-        }
-        timeoutRef.current = setTimeout(() => {
-          setTranscriptionBubbles((prev) =>
-            prev.map((bubble) =>
-              bubble.id === newBubble.id
-                ? { ...bubble, isComplete: true }
-                : bubble
-            )
-          )
-        }, 250)
-      } else if (interimTranscript.trim()) {
-        setCurrentTranscription(interimTranscript.trim())
-      }
-    }
-
-    recognitionRef.current.onerror = (event) => {
-      setIsTranslating(false)
-    }
-
-    recognitionRef.current.onend = () => {
-      setIsTranslating(false)
-      
-      // Only restart if we should be listening AND user didn't manually stop
-      if (shouldBeListening && !userStoppedRef.current) {
-        setTimeout(() => {
-          if (shouldBeListening && !userStoppedRef.current && recognitionRef.current) {
-            startSpeechRecognition()
-          }
-        }, 100)
-      }
-    }
-
-    if (shouldBeListening) {
-      startSpeechRecognition()
-    }
-
+  // Cleanup Google Speech Service on unmount
+  useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop()
-        recognitionRef.current = null
+      googleSpeechService.cleanup()
+    }
+  }, [])
+
+  // Google Cloud Speech-to-Text handlers
+  const startGoogleSpeechRecognition = useCallback(async () => {
+    console.log('🎤 startGoogleSpeechRecognition called, shouldBeListening:', shouldBeListening);
+
+    try {
+      // Check if Google Speech Service is ready
+      if (!googleSpeechService.isReady()) {
+        console.error('❌ Google Speech Service not ready');
+        alert('Google Cloud Speech-to-Text is not configured. Please check the setup guide and configure your API credentials.');
+        setIsTranslating(false)
+        return
       }
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
+
+      // Update Google Speech Service configuration
+      googleSpeechService.updateConfig({
+        languageCode: sourceLanguage,
+        speechEndTimeout: speechConfig.speechEndTimeout,
+        speechStartTimeout: speechConfig.speechStartTimeout,
+        maxWordsPerBubble: speechConfig.maxWordsPerBubble
+      })
+
+      await googleSpeechService.startRecognition({
+        onStart: () => {
+          setIsTranslating(true)
+        },
+        onEnd: () => {
+          setIsTranslating(false)
+        },
+        onInterimResult: (result) => {
+          setCurrentTranscription(result.transcript)
+        },
+        onFinalResult: (result) => {
+          const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const newBubble: MessageBubble = {
+            id: uniqueId,
+            text: result.transcript,
+            timestamp: new Date(),
+            isComplete: false
+          }
+          
+          setTranscriptionBubbles(prev => [...prev, newBubble])
+          setCurrentTranscription('')
+          
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current)
+          }
+          timeoutRef.current = setTimeout(() => {
+            setTranscriptionBubbles((prev) =>
+              prev.map((bubble) =>
+                bubble.id === uniqueId
+                  ? { ...bubble, isComplete: true }
+                  : bubble
+              )
+            )
+          }, 250)
+        },
+        onError: (error) => {
+          console.error('❌ Google Speech recognition error:', error)
+          alert('Speech recognition error: ' + error.message);
+          setIsTranslating(false)
+        }
+      })
+    } catch (error) {
+      console.error('❌ Failed to start Google Speech recognition:', error)
+      alert('Failed to start speech recognition: ' + error.message);
+      setIsTranslating(false)
+    }
+  }, [sourceLanguage, speechConfig])
+
+  const stopGoogleSpeechRecognition = useCallback(() => {
+    googleSpeechService.stopRecognition()
+    setIsTranslating(false)
+  }, [])
+
+  // Handle Google Cloud Speech-to-Text
+  useEffect(() => {
+    if (isSocketConnected) {
+      if (shouldBeListening) {
+        startGoogleSpeechRecognition()
+      } else {
+        stopGoogleSpeechRecognition()
       }
     }
-  }, [sourceLanguage, tokens, sessionId, shouldBeListening, selectedDeviceId])
+  }, [shouldBeListening, isSocketConnected, startGoogleSpeechRecognition, stopGoogleSpeechRecognition])
+
 
   const downloadQRCode = () => {
     if (qrCodeRef.current) {
@@ -688,7 +654,7 @@ function InputApp() {
               )}
             </div>
           </ConnectionDisplay>
-          <LanguageSelector
+          <InputLanguageSelector
             label="Source Language"
             selectedLanguage={sourceLanguage}
             onLanguageChange={setSourceLanguage}
@@ -710,10 +676,8 @@ function InputApp() {
             onClick={() => {
               if (isTranslating) {
                 setShouldBeListening(false)
-                stopSpeechRecognition()
               } else {
                 setShouldBeListening(true)
-                startSpeechRecognition()
               }
             }}
           >
@@ -774,7 +738,7 @@ function InputApp() {
           {isMobile && (
             <Box sx={{ marginBottom: '1rem' }}>
               <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-                <LanguageSelector
+                <InputLanguageSelector
                   label="Source Language"
                   selectedLanguage={sourceLanguage}
                   onLanguageChange={setSourceLanguage}
@@ -812,10 +776,8 @@ function InputApp() {
                 onClick={() => {
                   if (isTranslating) {
                     setShouldBeListening(false)
-                    stopSpeechRecognition()
                   } else {
                     setShouldBeListening(true)
-                    startSpeechRecognition()
                   }
                 }}
               >

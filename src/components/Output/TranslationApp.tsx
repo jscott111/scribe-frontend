@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
 import { Paper, Chip, Button, Box, useMediaQuery, useTheme, CircularProgress, TextField } from '@mui/material'
-import LanguageSelector from '../LanguageSelector'
+import OutputLanguageSelector from '../OutputLanguageSelector'
 import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
@@ -475,7 +475,7 @@ function TranslationApp() {
               Select Target Language
             </Typography>
             
-            <LanguageSelector
+            <OutputLanguageSelector
               label="Language"
               selectedLanguage={targetLanguage || LanguageCode.EN}
               onLanguageChange={setTargetLanguage}
