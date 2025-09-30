@@ -225,6 +225,11 @@ function InputApp() {
     setIsSocketConnected(false)
 
     if (socketRef.current) {
+      // Remove all event listeners before disconnecting
+      socketRef.current.removeAllListeners()
+      if ((socketRef.current as any).connectionCountInterval) {
+        clearInterval((socketRef.current as any).connectionCountInterval)
+      }
       socketRef.current.disconnect()
       socketRef.current = null
     }
@@ -351,6 +356,16 @@ function InputApp() {
   // Cleanup Google Speech Service on unmount
   useEffect(() => {
     return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners()
+        if ((socketRef.current as any).connectionCountInterval) {
+          clearInterval((socketRef.current as any).connectionCountInterval)
+        }
+        socketRef.current.disconnect()
+      }
       googleSpeechService.cleanup()
     }
   }, [])
