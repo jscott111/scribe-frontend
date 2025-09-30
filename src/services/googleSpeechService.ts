@@ -58,10 +58,28 @@ class GoogleSpeechService {
    */
   async initialize(socket: any): Promise<void> {
     try {
+      // If already initialized with the same socket, don't reinitialize
+      if (this.socket === socket) {
+        console.log('🔄 Google Speech Service already initialized with this socket, skipping...');
+        return;
+      }
+      
+      // Clean up existing socket listeners before setting up new ones
+      if (this.socket) {
+        this.socket.removeAllListeners('transcriptionUpdate');
+        this.socket.removeAllListeners('finalResultReceived');
+        this.socket.removeAllListeners('streamRestarted');
+      }
+      
       this.socket = socket;
       
       // Listen for transcription updates from backend
       this.socket.on('transcriptionUpdate', (data: any) => {
+        // Only process results for the current bubble
+        if (data.bubbleId !== this.currentBubbleId) {
+          return;
+        }
+        
         // Forward to callbacks if available
         if (data.isFinal && this.callbacks?.onFinalResult) {
           this.callbacks.onFinalResult({
@@ -87,6 +105,13 @@ class GoogleSpeechService {
         if (data.bubbleId === this.currentBubbleId) {
           this.hasReceivedFinalResult = true;
         }
+      });
+      
+      // Listen for stream restart notifications
+      this.socket.on('streamRestarted', (data: any) => {
+        console.log('🔄 Stream restarted with new bubble ID:', data.newBubbleId);
+        this.currentBubbleId = data.newBubbleId;
+        this.hasReceivedFinalResult = false;
       });
       
       // Request microphone access with simpler constraints
@@ -234,6 +259,13 @@ class GoogleSpeechService {
    */
   isReady(): boolean {
     return this.stream !== null && this.audioContext !== null && this.socket !== null;
+  }
+
+  /**
+   * Check if service is initialized with a specific socket
+   */
+  isInitializedWithSocket(socket: any): boolean {
+    return this.socket === socket;
   }
 
   /**
