@@ -159,7 +159,7 @@ class GoogleSpeechService {
 
     try {
       // Set up ScriptProcessorNode for raw PCM audio capture
-      const bufferSize = 8192; // Buffer size for audio processing (larger for 1-second chunks)
+      const bufferSize = 2048; // Buffer size for audio processing (larger for 1-second chunks)
       this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
       
       // Connect microphone to script processor
