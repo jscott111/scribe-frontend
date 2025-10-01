@@ -1,6 +1,5 @@
 interface SpeechRecognitionConfig {
   languageCode: string;
-  speechEndTimeout: number; // seconds of silence before finalizing
   speechStartTimeout: number; // seconds to wait for speech to start
   maxWordsPerBubble: number; // maximum words before forcing finalization
   sampleRateHertz: number;
@@ -37,7 +36,6 @@ class GoogleSpeechService {
   private currentTranscript = '';
   private config: SpeechRecognitionConfig;
   private callbacks: SpeechRecognitionCallbacks | null = null;
-  private silenceTimer: NodeJS.Timeout | null = null;
   private wordCountTimer: NodeJS.Timeout | null = null;
   private socket: any = null; // Socket.IO connection
   private hasReceivedFinalResult = false; // Track if we've received a final result from Google Cloud
@@ -45,7 +43,6 @@ class GoogleSpeechService {
   constructor() {
     this.config = {
       languageCode: 'en-CA',
-      speechEndTimeout: 2.0,
       speechStartTimeout: 5.0,
       maxWordsPerBubble: 15,
       sampleRateHertz: 48000,
@@ -159,7 +156,7 @@ class GoogleSpeechService {
 
     try {
       // Set up ScriptProcessorNode for raw PCM audio capture
-      const bufferSize = 2048; // Buffer size for audio processing (larger for 1-second chunks)
+      const bufferSize = 1024; // Buffer size for audio processing (larger for 1-second chunks)
       this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
       
       // Connect microphone to script processor
@@ -181,7 +178,6 @@ class GoogleSpeechService {
 
       // Start processing
       this.callbacks?.onStart();
-      this.startSilenceDetection();
 
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
@@ -209,11 +205,6 @@ class GoogleSpeechService {
       this.scriptProcessor = null;
     }
 
-    // Finalize current transcript if there's content
-    if (this.currentTranscript.trim()) {
-      this.finalizeCurrentTranscript();
-    }
-
     // Notify backend to stop streaming
     this.socket.emit('stopStreaming');
 
@@ -236,7 +227,6 @@ class GoogleSpeechService {
   resumeRecognition(): void {
     if (this.isRecording && this.isPaused) {
       this.isPaused = false;
-      this.startSilenceDetection();
     }
   }
 
@@ -301,8 +291,6 @@ class GoogleSpeechService {
     this.hasReceivedFinalResult = false;
   }
 
-  // Private methods
-
   private generateBubbleId(): string {
     return Date.now().toString() + Math.random().toString(36).substr(2, 9);
   }
@@ -349,7 +337,6 @@ class GoogleSpeechService {
       finalTranscript: '',
       wordCount: this.currentWordCount,
       maxWordsPerBubble: this.config.maxWordsPerBubble,
-      speechEndTimeout: this.config.speechEndTimeout,
       audioFormat: 'LINEAR16', // Indicate this is raw LINEAR16 data
       sampleRate: 48000 // Current sample rate from AudioContext
     });
@@ -387,7 +374,6 @@ class GoogleSpeechService {
         finalTranscript: '',
         wordCount: this.currentWordCount,
         maxWordsPerBubble: this.config.maxWordsPerBubble,
-        speechEndTimeout: this.config.speechEndTimeout
       });
     };
     reader.readAsArrayBuffer(audioBlob);
@@ -404,98 +390,7 @@ class GoogleSpeechService {
     return btoa(binary);
   }
 
-
-  // private setupSocketListeners(): void {
-  //   if (!this.socket) return;
-
-  //   // Listen for interim results from backend
-  //   this.socket.on('interimTranscription', (data: any) => {
-  //     console.log('🎤 Received interim transcription:', data);
-  //     if (data.bubbleId === this.currentBubbleId) {
-  //       this.currentTranscript = data.transcript;
-  //       this.currentWordCount = data.wordCount;
-
-  //       console.log('🎤 Calling onInterimResult with:', data.transcript);
-  //       this.callbacks?.onInterimResult({
-  //         transcript: data.transcript,
-  //         isFinal: false,
-  //         confidence: 0.8,
-  //         wordCount: data.wordCount,
-  //         bubbleId: data.bubbleId
-  //       });
-
-  //       // Check word count limit
-  //       if (data.wordCount >= this.config.maxWordsPerBubble) {
-  //         this.finalizeCurrentTranscript();
-  //       } else {
-  //         // Reset silence timer when we get new interim results
-  //         this.startSilenceDetection();
-  //       }
-  //     }
-  //   });
-
-  //   // Listen for final results from backend
-  //   this.socket.on('transcriptionComplete', (data: any) => {
-  //     if (data.bubbleId === this.currentBubbleId) {
-  //       this.callbacks?.onFinalResult({
-  //         transcript: data.transcription,
-  //         isFinal: true,
-  //         confidence: 0.9,
-  //         wordCount: this.currentWordCount,
-  //         bubbleId: data.bubbleId
-  //       });
-
-  //       this.currentTranscript = '';
-  //       this.currentWordCount = 0;
-  //     }
-  //   });
-
-  //   // Listen for errors
-  //   this.socket.on('error', (error: any) => {
-  //     console.error('❌ Speech recognition error:', error);
-  //     this.callbacks?.onError(new Error(error.message || 'Speech recognition error'));
-  //   });
-  // }
-
-  private startSilenceDetection(): void {
-    this.clearTimers();
-    
-    // Set up silence timeout
-    this.silenceTimer = setTimeout(() => {
-      if (this.currentTranscript.trim()) {
-        this.finalizeCurrentTranscript();
-      }
-    }, this.config.speechEndTimeout * 1000);
-  }
-
-  private finalizeCurrentTranscript(): void {
-    if (this.currentTranscript.trim() && this.socket) {
-      // Only finalize if we haven't already received a final result from Google Cloud
-      // This prevents duplicate finalization when Google Cloud already sent a final result
-      if (!this.hasReceivedFinalResult) {
-        // Send finalization request to backend
-        this.socket.emit('googleSpeechTranscription', {
-          audioData: '', // No new audio data
-          sourceLanguage: this.config.languageCode,
-          bubbleId: this.currentBubbleId,
-          isFinal: true,
-          interimTranscript: '',
-          finalTranscript: this.currentTranscript.trim(),
-          wordCount: this.currentWordCount,
-          maxWordsPerBubble: this.config.maxWordsPerBubble,
-          speechEndTimeout: this.config.speechEndTimeout
-        });
-      }
-    }
-
-    this.clearTimers();
-  }
-
   private clearTimers(): void {
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
     if (this.wordCountTimer) {
       clearTimeout(this.wordCountTimer);
       this.wordCountTimer = null;
