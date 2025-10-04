@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useUserCode } from '../../contexts/SessionContext'
 import ProfileModal from '../Profile/ProfileModal'
 import googleSpeechService from '../../services/googleSpeechService'
+import { setCookie, getCookie } from '../../utils/cookieUtils'
 
 interface MessageBubble {
   id: string
@@ -153,8 +154,27 @@ const RightPanelContent = styled.div<{ isMobile: boolean }>`
 `
 
 function InputApp() {
-  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(LanguageCode.EN_CA)
+  // Initialize source language from cookie or default
+  const getInitialSourceLanguage = (): LanguageCode => {
+    const savedLanguage = getCookie('scribe-source-language')
+    if (savedLanguage && Object.values(LanguageCode).includes(savedLanguage as LanguageCode)) {
+      return savedLanguage as LanguageCode
+    }
+    return LanguageCode.EN_CA
+  }
+
+  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(getInitialSourceLanguage())
   const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
+
+  // Handle source language change and save to cookie
+  const handleSourceLanguageChange = (language: LanguageCode) => {
+    setSourceLanguage(language)
+    setCookie('scribe-source-language', language, {
+      maxAge: 365 * 24 * 60 * 60, // 1 year
+      path: '/',
+      sameSite: 'lax'
+    })
+  }
   const [isTranslating, setIsTranslating] = useState(false)
   const [shouldBeListening, setShouldBeListening] = useState(false)
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
@@ -626,7 +646,7 @@ function InputApp() {
           <InputLanguageSelector
             label="Source Language"
             selectedLanguage={sourceLanguage}
-            onLanguageChange={setSourceLanguage}
+            onLanguageChange={handleSourceLanguageChange}
           />
           <Box sx={{ marginTop: '1rem' }}>
             <DeviceSelector
@@ -710,7 +730,7 @@ function InputApp() {
                 <InputLanguageSelector
                   label="Source Language"
                   selectedLanguage={sourceLanguage}
-                  onLanguageChange={setSourceLanguage}
+                  onLanguageChange={handleSourceLanguageChange}
                 />
               </Box>
               <Box sx={{ marginTop: '1rem', width: '100%' }}>
