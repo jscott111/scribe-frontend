@@ -10,19 +10,27 @@ import {
   Divider,
   Switch,
   FormControlLabel,
-  Alert
+  Alert,
+  TextField,
+  IconButton,
+  Tooltip
 } from '@mui/material'
 import LogoutIcon from '@mui/icons-material/Logout'
 import SecurityIcon from '@mui/icons-material/Security'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import EditIcon from '@mui/icons-material/Edit'
+import ClearIcon from '@mui/icons-material/Clear'
 import Typography from '../UI/Typography'
 import TOTPSetupModal from './TOTPSetupModal'
 import ConfirmationDialog from '../UI/ConfirmationDialog'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface User {
   id: number
   email: string
   name: string
+  userCode?: string
   createdAt: string
   updatedAt?: string
   totpEnabled?: boolean
@@ -32,42 +40,105 @@ interface ProfileModalProps {
   open: boolean
   onClose: () => void
   user: User | null
-  sessionId: string | null
   isSocketConnected: boolean
   onLogout: () => void
-  onNewSession: () => void
 }
 
 const ProfileModal: React.FC<ProfileModalProps> = ({
   open,
   onClose,
   user,
-  sessionId,
   isSocketConnected,
-  onLogout,
-  onNewSession
+  onLogout
 }) => {
+  const { generateUserCode, setUserCode, clearUserCode } = useAuth()
   const [totpSetupOpen, setTotpSetupOpen] = useState(false)
   const [totpEnabled, setTotpEnabled] = useState(user?.totpEnabled || false)
-  const [error, setError] = useState<string | null>(null)
-  const [newSessionConfirmOpen, setNewSessionConfirmOpen] = useState(false)
+  const [userCodeError, setUserCodeError] = useState<string | null>(null)
+  const [totpError, setTotpError] = useState<string | null>(null)
+  const [isEditingUserCode, setIsEditingUserCode] = useState(false)
+  const [customUserCode, setCustomUserCode] = useState('')
+  const [isGeneratingCode, setIsGeneratingCode] = useState(false)
+  const [isSettingCode, setIsSettingCode] = useState(false)
+  const [isClearingCode, setIsClearingCode] = useState(false)
 
   // Update TOTP status when user data changes
   useEffect(() => {
     setTotpEnabled(user?.totpEnabled || false)
   }, [user?.totpEnabled])
+  
   const handleLogout = () => {
     onClose()
     onLogout()
   }
 
-  const handleNewSession = () => {
-    setNewSessionConfirmOpen(true)
+  const handleGenerateUserCode = async () => {
+    setIsGeneratingCode(true)
+    setUserCodeError(null)
+    
+    try {
+      await generateUserCode()
+      setIsEditingUserCode(false)
+    } catch (error) {
+      setUserCodeError(error instanceof Error ? error.message : 'Failed to generate user code')
+    } finally {
+      setIsGeneratingCode(false)
+    }
   }
 
-  const confirmNewSession = () => {
-    onNewSession()
-    onClose()
+  const handleSetCustomUserCode = async () => {
+    if (!customUserCode.trim()) return
+    
+    // Validate user code format
+    if (!/^[A-Z0-9]{3,8}$/.test(customUserCode.trim().toUpperCase())) {
+      setUserCodeError('User code must be 3-8 alphanumeric characters')
+      return
+    }
+    
+    setIsSettingCode(true)
+    setUserCodeError(null)
+    
+    try {
+      await setUserCode(customUserCode.trim().toUpperCase())
+      setCustomUserCode('')
+      setIsEditingUserCode(false)
+    } catch (error) {
+      setUserCodeError(error instanceof Error ? error.message : 'Failed to set user code')
+    } finally {
+      setIsSettingCode(false)
+    }
+  }
+
+  const handleClearUserCode = async () => {
+    setIsClearingCode(true)
+    setUserCodeError(null)
+    
+    try {
+      await clearUserCode()
+      setIsEditingUserCode(false)
+    } catch (error) {
+      setUserCodeError(error instanceof Error ? error.message : 'Failed to clear user code')
+    } finally {
+      setIsClearingCode(false)
+    }
+  }
+
+  const handleCopyUserCode = () => {
+    if (user?.userCode) {
+      navigator.clipboard.writeText(user.userCode)
+    }
+  }
+
+  const handleStartEditing = () => {
+    setCustomUserCode('')
+    setIsEditingUserCode(true)
+    setUserCodeError(null)
+  }
+
+  const handleCancelEditing = () => {
+    setIsEditingUserCode(false)
+    setCustomUserCode('')
+    setUserCodeError(null)
   }
 
   return (
@@ -132,23 +203,113 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           
                  <Box>
                    <Typography variant="subsectionHeader" sx={{ marginBottom: '0.5rem' }}>
-                     Session Information
+                     User Code Management
                    </Typography>
-                   <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '0.25rem' }}>
-                     <strong>Current Session:</strong> {sessionId}
-                   </Typography>
-                   <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '1rem' }}>
-                     <strong>Status:</strong> {isSocketConnected ? 'Connected' : 'Disconnected'}
-                   </Typography>
-                   <Button
-                     variant="outlined"
-                     color="warning"
-                     startIcon={<RefreshIcon />}
-                     onClick={handleNewSession}
-                     sx={{ borderRadius: '2rem' }}
-                   >
-                     New Session
-                   </Button>
+                   
+                   {!isEditingUserCode ? (
+                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                       <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                         <Typography variant="bodyText" sx={{ color: 'text.secondary' }}>
+                           <strong>Current Code:</strong> {user?.userCode || 'Not set'}
+                         </Typography>
+                         {user?.userCode && (
+                           <Tooltip title="Copy to clipboard">
+                             <IconButton size="small" onClick={handleCopyUserCode}>
+                               <ContentCopyIcon fontSize="small" />
+                             </IconButton>
+                           </Tooltip>
+                         )}
+                       </Box>
+                       
+                       <Typography variant="bodyText" sx={{ color: 'text.secondary', marginBottom: '0.5rem' }}>
+                         <strong>Status:</strong> {isSocketConnected ? 'Connected' : 'Disconnected'}
+                       </Typography>
+                       
+                       <Box sx={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                         <Button
+                           variant="outlined"
+                           size="small"
+                           startIcon={<RefreshIcon />}
+                           onClick={handleGenerateUserCode}
+                           disabled={isGeneratingCode}
+                           sx={{ borderRadius: '1rem' }}
+                         >
+                           {isGeneratingCode ? 'Generating...' : 'Generate New'}
+                         </Button>
+                         
+                         <Button
+                           variant="outlined"
+                           size="small"
+                           startIcon={<EditIcon />}
+                           onClick={handleStartEditing}
+                           sx={{ borderRadius: '1rem' }}
+                         >
+                           Set Custom
+                         </Button>
+                         
+                         {user?.userCode && (
+                           <Button
+                             variant="outlined"
+                             color="error"
+                             size="small"
+                             startIcon={<ClearIcon />}
+                             onClick={handleClearUserCode}
+                             disabled={isClearingCode}
+                             sx={{ borderRadius: '1rem' }}
+                           >
+                             {isClearingCode ? 'Clearing...' : 'Clear'}
+                           </Button>
+                         )}
+                       </Box>
+                     </Box>
+                   ) : (
+                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                       <TextField
+                         label="Custom User Code"
+                         value={customUserCode}
+                         onChange={(e) => setCustomUserCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))}
+                         placeholder="ABC123"
+                         variant="outlined"
+                         size="small"
+                         helperText="3-8 alphanumeric characters"
+                         sx={{
+                           '& .MuiOutlinedInput-root': {
+                             borderRadius: '1rem',
+                             fontFamily: 'monospace',
+                             textAlign: 'center'
+                           }
+                         }}
+                       />
+                       
+                       <Box sx={{ display: 'flex', gap: '0.5rem' }}>
+                         <Button
+                           variant="contained"
+                           size="small"
+                           onClick={handleSetCustomUserCode}
+                           disabled={!customUserCode.trim() || isSettingCode}
+                           sx={{ borderRadius: '1rem' }}
+                         >
+                           {isSettingCode ? 'Setting...' : 'Set Code'}
+                         </Button>
+                         
+                         <Button
+                           variant="outlined"
+                           size="small"
+                           onClick={handleCancelEditing}
+                           disabled={isSettingCode}
+                           sx={{ borderRadius: '1rem' }}
+                         >
+                           Cancel
+                         </Button>
+                       </Box>
+                     </Box>
+                   )}
+                   
+                   {userCodeError && (
+                     <Alert severity="error" sx={{ marginTop: '0.5rem' }}>
+                       {userCodeError}
+                     </Alert>
+                   )}
                  </Box>
                  
                  <Box>
@@ -164,7 +325,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
                              setTotpSetupOpen(true)
                            } else {
                              // TODO: Add disable TOTP functionality
-                             setError('TOTP disable functionality not implemented yet')
+                             setTotpError('TOTP disable functionality not implemented yet')
                            }
                          }}
                          color="primary"
@@ -179,9 +340,9 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
                        </Box>
                      }
                    />
-                   {error && (
+                   {totpError && (
                      <Alert severity="error" sx={{ marginTop: '0.5rem' }}>
-                       {error}
+                       {totpError}
                      </Alert>
                    )}
                  </Box>
@@ -213,21 +374,11 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
         onSuccess={() => {
           setTotpEnabled(true)
           setTotpSetupOpen(false)
-          setError(null)
+          setTotpError(null)
         }}
         user={user}
       />
       
-      <ConfirmationDialog
-        open={newSessionConfirmOpen}
-        onClose={() => setNewSessionConfirmOpen(false)}
-        onConfirm={confirmNewSession}
-        title="Create New Session"
-        message="Creating a new session will generate a new QR code and link. Your current audience will need to scan the new QR code or use the new link to continue receiving translations. Are you sure you want to create a new session?"
-        confirmText="Create New Session"
-        cancelText="Keep Current Session"
-        confirmColor="warning"
-      />
     </Dialog>
   )
 }

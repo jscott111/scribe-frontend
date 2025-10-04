@@ -14,7 +14,7 @@ import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
 import { useAuth } from '../../contexts/AuthContext'
-import { useSession } from '../../contexts/SessionContext'
+import { useUserCode } from '../../contexts/SessionContext'
 import ProfileModal from '../Profile/ProfileModal'
 import googleSpeechService from '../../services/googleSpeechService'
 
@@ -163,6 +163,7 @@ function InputApp() {
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [connectionInfo, setConnectionInfo] = useState<{userCode: string, connectionUrl: string, qrCodeUrl: string, shareText: string} | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [speechConfig, setSpeechConfig] = useState({
     speechEndTimeout: 1, // Balanced timeout for natural speech patterns
@@ -172,55 +173,44 @@ function InputApp() {
   const socketRef = React.useRef<Socket | null>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
-  const { user, tokens, logout, updateTokens } = useAuth()
-  const { sessionId, forceNewSessionId, generateSessionId } = useSession()
+  const { user, tokens, logout, updateTokens, getConnectionInfo } = useAuth()
+  const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
   const isMobile = useMediaQuery('(max-width: 850px)')
 
   useEffect(() => {
-    if (tokens && user && !sessionId) {
-      console.log('🔗 User logged in without session ID, generating new one')
-      generateSessionId()
+    if (tokens && user && user.userCode) {
+      // Always sync the userCode from AuthContext to UserCodeContext
+      if (userCode !== user.userCode) {
+        console.log('🔗 Syncing user code from', userCode, 'to', user.userCode)
+        setUserCode(user.userCode)
+      }
     }
-  }, [tokens, user, sessionId, generateSessionId])
+  }, [tokens, user, userCode, setUserCode])
 
   useEffect(() => {
-    if (tokens && sessionId && user) {
-      const registerSession = async () => {
+    if (tokens && userCode) {
+      const fetchConnectionInfo = async () => {
         try {
-          const response = await fetch(`${CONFIG.BACKEND_URL}/sessions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${tokens.accessToken}`
-            },
-            body: JSON.stringify({ sessionId })
-          })
-          
-          if (response.ok) {
-            const data = await response.json()
-            console.log('🔗 Session registered with backend:', data.message)
-          } else {
-            console.error('🔗 Failed to register session with backend')
-          }
+          const info = await getConnectionInfo()
+          setConnectionInfo(info)
         } catch (error) {
-          console.error('🔗 Error registering session:', error)
+          console.error('Failed to fetch connection info:', error)
         }
       }
-      
-      registerSession()
+      fetchConnectionInfo()
     }
-  }, [tokens, sessionId, user])
+  }, [tokens, userCode, getConnectionInfo])
 
   useEffect(() => {
-    if (!tokens || !sessionId) {
-      console.log('🔌 Socket: Missing tokens or sessionId, not connecting')
+    if (!tokens || !userCode) {
+      console.log('🔌 Socket: Missing tokens or userCode, not connecting')
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
       return
     }
 
-    console.log('🔌 Socket: Connecting to', CONFIG.BACKEND_URL, 'with sessionId:', sessionId)
+    console.log('🔌 Socket: Connecting to', CONFIG.BACKEND_URL, 'with userCode:', userCode, '(tokens available:', !!tokens, ')')
     setIsSocketConnecting(true)
     setIsSocketConnected(false)
 
@@ -237,7 +227,7 @@ function InputApp() {
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
         token: tokens.accessToken,
-        sessionId: sessionId
+        userCode: userCode
       },
       reconnection: true,
       reconnectionAttempts: 5,
@@ -246,7 +236,7 @@ function InputApp() {
     })
     
     socketRef.current.on('connect', () => {
-      console.log('🔌 Socket connected successfully')
+      console.log('🔌 Socket connected successfully with userCode:', userCode)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
       socketRef.current?.emit('getConnectionCount')
@@ -342,7 +332,7 @@ function InputApp() {
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
     }
-  }, [tokens, sessionId])
+  }, [tokens, userCode])
 
   // Initialize Google Cloud Speech-to-Text service when socket is connected
   useEffect(() => {
@@ -386,7 +376,6 @@ function InputApp() {
       // Update Google Speech Service configuration
       googleSpeechService.updateConfig({
         languageCode: sourceLanguage,
-        speechEndTimeout: speechConfig.speechEndTimeout,
         speechStartTimeout: speechConfig.speechStartTimeout,
         maxWordsPerBubble: speechConfig.maxWordsPerBubble
       })
@@ -457,49 +446,14 @@ function InputApp() {
 
 
   const downloadQRCode = () => {
-    if (qrCodeRef.current) {
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      const svg = qrCodeRef.current.querySelector('svg')
-      
-      if (svg && ctx) {
-        canvas.width = 200
-        canvas.height = 200
-        
-        const svgData = new XMLSerializer().serializeToString(svg)
-        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
-        const svgUrl = URL.createObjectURL(svgBlob)
-        
-        const img = new Image()
-        img.onload = () => {
-          ctx.fillStyle = 'white'
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-          
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-          
-          canvas.toBlob((blob) => {
-            if (blob) {
-              const url = URL.createObjectURL(blob)
-              const link = document.createElement('a')
-              link.href = url
-              link.download = 'scribe-translation-qr.png'
-              document.body.appendChild(link)
-              link.click()
-              document.body.removeChild(link)
-              URL.revokeObjectURL(url)
-            }
-          })
-          
-          URL.revokeObjectURL(svgUrl)
-        }
-        img.src = svgUrl
-      }
+    if (connectionInfo?.qrCodeUrl) {
+      const link = document.createElement('a')
+      link.href = connectionInfo.qrCodeUrl
+      link.download = 'scribe-translation-qr.png'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
     }
-  }
-
-  const handleGenerateNewSession = () => {
-    const newSessionId = forceNewSessionId()
-    console.log('🔗 User requested new session ID:', newSessionId)
   }
 
   return (
@@ -706,11 +660,11 @@ function InputApp() {
               Share this QR code with your audience
             </Typography>
             <QRCodeContainer ref={qrCodeRef}>
-              {sessionId ? (
-                <QRCode
-                  value={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`}
-                  size={120}
-                  style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+              {connectionInfo ? (
+                <img 
+                  src={connectionInfo.qrCodeUrl} 
+                  alt="QR Code" 
+                  style={{ width: 120, height: 120 }}
                 />
               ) : (
                 <Box sx={{ 
@@ -727,12 +681,12 @@ function InputApp() {
               )}
             </QRCodeContainer>
             <Typography variant="captionText" sx={{ textAlign: 'center', fontSize: '0.75rem' }}>
-              {sessionId ? (
-                <a href={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`} target="_blank" rel="noopener noreferrer">
-                  {CONFIG.TRANSLATION_URL}?session={sessionId}
+              {connectionInfo ? (
+                <a href={connectionInfo.connectionUrl} target="_blank" rel="noopener noreferrer">
+                  {connectionInfo.connectionUrl}
                 </a>
               ) : (
-                'Generating session link...'
+                'Generating connection link...'
               )}
             </Typography>
             <Button
@@ -841,11 +795,11 @@ function InputApp() {
           </Typography>
           
           <Box ref={qrCodeRef} sx={{ marginBottom: '1.5rem' }}>
-            {sessionId ? (
-              <QRCode
-                value={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`}
-                size={200}
-                style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+            {connectionInfo ? (
+              <img 
+                src={connectionInfo.qrCodeUrl} 
+                alt="QR Code" 
+                style={{ width: 200, height: 200 }}
               />
             ) : (
               <Box sx={{ 
@@ -869,12 +823,12 @@ function InputApp() {
             marginBottom: '1rem',
             display: 'block'
           }}>
-            {sessionId ? (
-              <a href={`${CONFIG.TRANSLATION_URL}?session=${sessionId}`} target="_blank" rel="noopener noreferrer">
-                {CONFIG.TRANSLATION_URL}?session={sessionId}
+            {connectionInfo ? (
+              <a href={connectionInfo.connectionUrl} target="_blank" rel="noopener noreferrer">
+                {connectionInfo.connectionUrl}
               </a>
             ) : (
-              'Generating session link...'
+              'Generating connection link...'
             )}
           </Typography>
         </DialogContent>
@@ -902,10 +856,8 @@ function InputApp() {
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         user={user}
-        sessionId={sessionId}
         isSocketConnected={isSocketConnected}
         onLogout={logout}
-        onNewSession={handleGenerateNewSession}
       />
     </MainContainer>
   )

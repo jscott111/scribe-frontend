@@ -9,7 +9,7 @@ import AuthPage from './components/Auth/AuthPage.tsx'
 import ResetPasswordPage from './components/Auth/ResetPasswordPage.tsx'
 import ProtectedRoute from './components/Auth/ProtectedRoute.tsx'
 import { AuthProvider } from './contexts/AuthContext'
-import { SessionProvider } from './contexts/SessionContext'
+import { UserCodeProvider } from './contexts/SessionContext'
 import theme from './theme/theme'
 import './index.css'
 
@@ -62,11 +62,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <SessionProvider>
+      <UserCodeProvider>
         <AuthProvider>
           <App />
         </AuthProvider>
-      </SessionProvider>
+      </UserCodeProvider>
     </ThemeProvider>
   </React.StrictMode>
 )

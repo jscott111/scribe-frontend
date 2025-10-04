@@ -6,7 +6,7 @@ import { LanguageCode, getLanguageInfo } from '../../enums/azureLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
-import { useSession } from '../../contexts/SessionContext'
+import { useUserCode } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 
 const LandingPageContainer = styled.div`
@@ -201,71 +201,71 @@ function TranslationApp() {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
-  const [sessionInput, setSessionInput] = useState('')
-  const [isValidatingSession, setIsValidatingSession] = useState(false)
-  const [sessionValidationError, setSessionValidationError] = useState('')
-  const [attemptedSessionId, setAttemptedSessionId] = useState('')
+  const [userCodeInput, setUserCodeInput] = useState('')
+  const [isValidatingUserCode, setIsValidatingUserCode] = useState(false)
+  const [userCodeValidationError, setUserCodeValidationError] = useState('')
+  const [attemptedUserCode, setAttemptedUserCode] = useState('')
   
   const socketRef = useRef<Socket | null>(null)
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
-  const { sessionId, setSessionId, clearSessionId } = useSession()
+  const { userCode, setUserCode, clearUserCode } = useUserCode()
 
-  // Function to validate session ID
-  const validateSessionId = async (sessionIdToValidate: string): Promise<boolean> => {
-    if (!sessionIdToValidate || !/^[A-Z0-9]{8}$/.test(sessionIdToValidate)) {
-      setSessionValidationError('Session ID must be 8 characters (letters and numbers)')
-      clearSessionId() // Clear any existing session ID
+  // Function to validate user code
+  const validateUserCode = async (userCodeToValidate: string): Promise<boolean> => {
+    if (!userCodeToValidate || !/^[A-Z0-9]{3,8}$/.test(userCodeToValidate)) {
+      setUserCodeValidationError('User code must be 3-8 characters (letters and numbers)')
+      clearUserCode() // Clear any existing user code
       return false
     }
 
-    setIsValidatingSession(true)
-    setSessionValidationError('')
+    setIsValidatingUserCode(true)
+    setUserCodeValidationError('')
 
     try {
-      const response = await fetch(`${CONFIG.BACKEND_URL}/sessions/${sessionIdToValidate}/validate`)
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/user-by-code?code=${userCodeToValidate}`)
       const data = await response.json()
 
-      if (data.valid) {
-        setSessionId(sessionIdToValidate)
+      if (data.user) {
+        setUserCode(userCodeToValidate)
         return true
       } else {
-        setSessionValidationError(data.error || 'Session not found or inactive')
-        clearSessionId() // Clear any existing session ID
+        setUserCodeValidationError('User code not found or invalid')
+        clearUserCode() // Clear any existing user code
         return false
       }
     } catch (error) {
-      console.error('Session validation error:', error)
-      setSessionValidationError('Failed to validate session. Please try again.')
-      clearSessionId() // Clear any existing session ID
+      console.error('User code validation error:', error)
+      setUserCodeValidationError('Failed to validate user code. Please try again.')
+      clearUserCode() // Clear any existing user code
       return false
     } finally {
-      setIsValidatingSession(false)
+      setIsValidatingUserCode(false)
     }
   }
   
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
-    const sessionFromUrl = urlParams.get('session')
-    console.log('🔗 TranslationApp - Session from URL:', sessionFromUrl)
-    console.log('🔗 TranslationApp - Current sessionId:', sessionId)
+    const codeFromUrl = urlParams.get('code')
+    console.log('🔗 TranslationApp - User code from URL:', codeFromUrl)
+    console.log('🔗 TranslationApp - Current userCode:', userCode)
     
-    if (sessionFromUrl) {
-      setAttemptedSessionId(sessionFromUrl.toUpperCase())
-      setSessionInput(sessionFromUrl.toUpperCase())
-      validateSessionId(sessionFromUrl)
+    if (codeFromUrl) {
+      setAttemptedUserCode(codeFromUrl.toUpperCase())
+      setUserCodeInput(codeFromUrl.toUpperCase())
+      validateUserCode(codeFromUrl)
     } else {
-      console.log('🔗 TranslationApp - No session ID in URL, clearing session and showing blank page')
-      clearSessionId() // Clear any existing session ID
+      console.log('🔗 TranslationApp - No user code in URL, clearing user code and showing blank page')
+      clearUserCode() // Clear any existing user code
     }
   }, []) // Remove dependencies to avoid infinite loop
 
   useEffect(() => {
-    console.log('🔗 TranslationApp - Connecting with sessionId:', sessionId, 'targetLanguage:', targetLanguage)
+    console.log('🔗 TranslationApp - Connecting with userCode:', userCode, 'targetLanguage:', targetLanguage)
     
-    // Only connect if we have both a session ID and target language
-    if (!targetLanguage || !sessionId) {
-      console.log('🔗 TranslationApp - Not connecting: missing sessionId or targetLanguage')
+    // Only connect if we have both a user code and target language
+    if (!targetLanguage || !userCode) {
+      console.log('🔗 TranslationApp - Not connecting: missing userCode or targetLanguage')
       setIsConnecting(false)
       setIsConnected(false)
       return
@@ -276,7 +276,7 @@ function TranslationApp() {
 
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
-        sessionId: sessionId
+        userCode: userCode
       },
       reconnection: true,
       reconnectionAttempts: 5,
@@ -359,7 +359,7 @@ function TranslationApp() {
       setIsConnecting(false)
       setIsConnected(false)
     }
-  }, [targetLanguage, sessionId])
+  }, [targetLanguage, userCode])
 
   useEffect(() => {
     if (socketRef.current && isConnected && targetLanguage && !showLanguageSelection) {
@@ -377,7 +377,7 @@ function TranslationApp() {
     }
   }
 
-  if (!sessionId || sessionValidationError) {
+  if (!userCode || userCodeValidationError) {
     return (
       <LandingPageContainer>
         <LandingCard elevation={3} sx={{ gap: '1rem', padding: '1rem' }}>
@@ -394,26 +394,26 @@ function TranslationApp() {
           </Typography>
           
           <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary' }}>
-            {attemptedSessionId ? 
-              `The session ID "${attemptedSessionId}" is not valid. Please enter a different session ID.` :
-              'Enter the session ID provided by the speaker to join their live translation session.'
+            {attemptedUserCode ? 
+              `The user code "${attemptedUserCode}" is not valid. Please enter a different user code.` :
+              'Enter the user code provided by the speaker to join their live translation session.'
             }
           </Typography>
           
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '300px' }}>
             <TextField
-              label="Session ID"
-              value={sessionInput}
+              label="User Code"
+              value={userCodeInput}
               onChange={(e) => {
-                setSessionInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))
-                setSessionValidationError('')
-                setAttemptedSessionId('')
+                setUserCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8))
+                setUserCodeValidationError('')
+                setAttemptedUserCode('')
               }}
-              placeholder="ABC12345"
+              placeholder="ABC123"
               variant="outlined"
               fullWidth
-              error={!!sessionValidationError}
-              helperText={sessionValidationError || 'Enter the 8-character session ID'}
+              error={!!userCodeValidationError}
+              helperText={userCodeValidationError || 'Enter the 3-8 character user code'}
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '1rem',
@@ -428,8 +428,8 @@ function TranslationApp() {
             <Button
               variant="contained"
               color="primary"
-              onClick={() => validateSessionId(sessionInput)}
-              disabled={!sessionInput || sessionInput.length !== 8 || isValidatingSession}
+              onClick={() => validateUserCode(userCodeInput)}
+              disabled={!userCodeInput || userCodeInput.length < 3 || userCodeInput.length > 8 || isValidatingUserCode}
               sx={{
                 borderRadius: '1rem',
                 padding: '0.75rem',
@@ -437,7 +437,7 @@ function TranslationApp() {
                 fontWeight: '600'
               }}
             >
-              {isValidatingSession ? (
+              {isValidatingUserCode ? (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <CircularProgress size={20} />
                   Validating...
@@ -489,17 +489,17 @@ function TranslationApp() {
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px' }}>
               <Typography variant="bodyText" sx={{ textAlign: 'center', color: 'text.secondary', fontSize: '0.9rem' }}>
-                Session: <strong>{sessionId}</strong>
+                User Code: <strong>{userCode}</strong>
               </Typography>
               
               <Button
                 variant="outlined"
                 color="secondary"
                 onClick={() => {
-                  clearSessionId()
-                  setSessionInput('')
-                  setSessionValidationError('')
-                  setAttemptedSessionId('')
+                  clearUserCode()
+                  setUserCodeInput('')
+                  setUserCodeValidationError('')
+                  setAttemptedUserCode('')
                 }}
                 sx={{
                   borderRadius: '1rem',
@@ -507,7 +507,7 @@ function TranslationApp() {
                   fontSize: '0.9rem'
                 }}
               >
-                Change Session
+                Change User Code
               </Button>
             </Box>
             
