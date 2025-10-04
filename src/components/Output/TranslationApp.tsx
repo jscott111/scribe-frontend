@@ -8,6 +8,7 @@ import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
 import { useUserCode } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import { setCookie, getCookie } from '../../utils/cookieUtils'
 
 const LandingPageContainer = styled.div`
   display: flex;
@@ -196,8 +197,27 @@ interface TranslationBubble {
 }
 
 function TranslationApp() {
-  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(LanguageCode.FR)
+  // Initialize target language from cookie or default
+  const getInitialTargetLanguage = (): LanguageCode => {
+    const savedLanguage = getCookie('scribe-target-language')
+    if (savedLanguage && Object.values(LanguageCode).includes(savedLanguage as LanguageCode)) {
+      return savedLanguage as LanguageCode
+    }
+    return LanguageCode.FR
+  }
+
+  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(getInitialTargetLanguage())
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
+
+  // Handle target language change and save to cookie
+  const handleTargetLanguageChange = (language: LanguageCode) => {
+    setTargetLanguage(language)
+    setCookie('scribe-target-language', language, {
+      maxAge: 365 * 24 * 60 * 60, // 1 year
+      path: '/',
+      sameSite: 'lax'
+    })
+  }
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
@@ -370,7 +390,8 @@ function TranslationApp() {
 
   const handleBackToLanguageSelection = () => {
     setShowLanguageSelection(true)
-    setTargetLanguage(LanguageCode.FR)
+    // Reset to saved language or default
+    setTargetLanguage(getInitialTargetLanguage())
     setTranslationBubbles([])
     if (socketRef.current) {
       socketRef.current.disconnect()
@@ -484,7 +505,7 @@ function TranslationApp() {
             <OutputLanguageSelector
               label="Language"
               selectedLanguage={targetLanguage || LanguageCode.EN}
-              onLanguageChange={setTargetLanguage}
+              onLanguageChange={handleTargetLanguageChange}
             />
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px' }}>
