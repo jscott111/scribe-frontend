@@ -6,6 +6,7 @@ interface User {
   id: number
   email: string
   name: string
+  userCode?: string
   createdAt: string
   updatedAt?: string
   totpEnabled?: boolean
@@ -14,6 +15,13 @@ interface User {
 interface AuthTokens {
   accessToken: string
   refreshToken: string
+}
+
+interface ConnectionInfo {
+  userCode: string
+  connectionUrl: string
+  qrCodeUrl: string
+  shareText: string
 }
 
 interface AuthContextType {
@@ -26,6 +34,10 @@ interface AuthContextType {
   logout: () => void
   refreshToken: () => Promise<boolean>
   updateTokens: (newTokens: AuthTokens) => void
+  generateUserCode: () => Promise<string>
+  setUserCode: (userCode: string) => Promise<void>
+  clearUserCode: () => Promise<void>
+  getConnectionInfo: () => Promise<ConnectionInfo>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -293,6 +305,124 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.setItem('authTokens', JSON.stringify(newTokens))
   }
 
+  const generateUserCode = async (): Promise<string> => {
+    if (!tokens) {
+      throw new Error('No authentication tokens available')
+    }
+
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/generate-user-code`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate user code')
+      }
+
+      const data = await response.json()
+      
+      // Update user with new code
+      if (user) {
+        const updatedUser = { ...user, userCode: data.userCode }
+        setUser(updatedUser)
+      }
+
+      return data.userCode
+    } catch (error) {
+      console.error('Generate user code error:', error)
+      throw error
+    }
+  }
+
+  const setUserCode = async (userCode: string): Promise<void> => {
+    if (!tokens) {
+      throw new Error('No authentication tokens available')
+    }
+
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/set-user-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tokens.accessToken}`
+        },
+        body: JSON.stringify({ userCode })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to set user code')
+      }
+
+      // Update user with new code
+      if (user) {
+        const updatedUser = { ...user, userCode }
+        setUser(updatedUser)
+      }
+    } catch (error) {
+      console.error('Set user code error:', error)
+      throw error
+    }
+  }
+
+  const clearUserCode = async (): Promise<void> => {
+    if (!tokens) {
+      throw new Error('No authentication tokens available')
+    }
+
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/user-code`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to clear user code')
+      }
+
+      // Update user to remove code
+      if (user) {
+        const updatedUser = { ...user, userCode: undefined }
+        setUser(updatedUser)
+      }
+    } catch (error) {
+      console.error('Clear user code error:', error)
+      throw error
+    }
+  }
+
+  const getConnectionInfo = async (): Promise<ConnectionInfo> => {
+    if (!tokens) {
+      throw new Error('No authentication tokens available')
+    }
+
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/auth/connection-info`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokens.accessToken}`
+        }
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to get connection info')
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error('Get connection info error:', error)
+      throw error
+    }
+  }
+
   const value: AuthContextType = {
     user,
     tokens,
@@ -303,6 +433,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     refreshToken,
     updateTokens,
+    generateUserCode,
+    setUserCode,
+    clearUserCode,
+    getConnectionInfo,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -1,90 +1,78 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 
-interface SessionContextType {
-  sessionId: string | null
-  generateSessionId: () => string
-  setSessionId: (id: string) => void
-  clearSessionId: () => void
-  forceNewSessionId: () => string
+interface UserCodeContextType {
+  userCode: string | null
+  setUserCode: (code: string) => void
+  clearUserCode: () => void
 }
 
-const SessionContext = createContext<SessionContextType | undefined>(undefined)
+const UserCodeContext = createContext<UserCodeContextType | undefined>(undefined)
 
-interface SessionProviderProps {
+interface UserCodeProviderProps {
   children: ReactNode
 }
 
-export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) => {
-  const [sessionId, setSessionIdState] = useState<string | null>(null)
+export const UserCodeProvider: React.FC<UserCodeProviderProps> = ({ children }) => {
+  const [userCode, setUserCodeState] = useState<string | null>(null)
 
-  // Load session ID from localStorage on mount
+  // Load user code from localStorage on mount
   useEffect(() => {
-    const storedSessionId = localStorage.getItem('scribeSessionId')
-    if (storedSessionId) {
-      // Check if the stored session ID is in the old format (longer than 8 characters)
-      if (storedSessionId.length > 8) {
-        console.log('🔗 SessionContext - Found old format session ID, clearing:', storedSessionId)
-        localStorage.removeItem('scribeSessionId')
-        setSessionIdState(null)
+    const storedUserCode = localStorage.getItem('scribeUserCode')
+    if (storedUserCode) {
+      // Validate user code format (3-8 alphanumeric characters)
+      if (/^[A-Z0-9]{3,8}$/.test(storedUserCode)) {
+        setUserCodeState(storedUserCode)
+        console.log('🔗 UserCodeContext - Loaded user code from localStorage:', storedUserCode)
       } else {
-        setSessionIdState(storedSessionId)
-        console.log('🔗 SessionContext - Loaded session from localStorage:', storedSessionId)
+        console.log('🔗 UserCodeContext - Invalid user code format, clearing:', storedUserCode)
+        localStorage.removeItem('scribeUserCode')
+        setUserCodeState(null)
       }
     }
   }, [])
 
-  // Store session ID in localStorage when it changes
+  // Store user code in localStorage when it changes
   useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem('scribeSessionId', sessionId)
+    if (userCode) {
+      localStorage.setItem('scribeUserCode', userCode)
     } else {
-      localStorage.removeItem('scribeSessionId')
+      localStorage.removeItem('scribeUserCode')
     }
-  }, [sessionId])
+  }, [userCode])
 
-  const generateSessionId = (): string => {
-    const timestamp = Date.now().toString(36).slice(-4) // Last 4 chars of timestamp in base36
-    const random = Math.random().toString(36).substr(2, 4) // 4 random chars
-    const newSessionId = `${timestamp}${random}`.toUpperCase()
-    console.log('🔗 Generated new session ID:', newSessionId)
-    setSessionIdState(newSessionId)
-    return newSessionId
+  const setUserCode = (code: string): void => {
+    // Validate user code format
+    if (!/^[A-Z0-9]{3,8}$/.test(code)) {
+      console.error('🔗 UserCodeContext - Invalid user code format:', code)
+      return
+    }
+    console.log('🔗 UserCodeContext - Setting user code:', code)
+    setUserCodeState(code)
   }
 
-  const setSessionId = (id: string): void => {
-    setSessionIdState(id)
+  const clearUserCode = (): void => {
+    console.log('🔗 UserCodeContext - Clearing user code')
+    setUserCodeState(null)
+    localStorage.removeItem('scribeUserCode')
   }
 
-  const clearSessionId = (): void => {
-    console.log('🔗 SessionContext - Clearing session ID')
-    setSessionIdState(null)
-    localStorage.removeItem('scribeSessionId')
+  const value: UserCodeContextType = {
+    userCode,
+    setUserCode,
+    clearUserCode,
   }
 
-  const forceNewSessionId = (): string => {
-    console.log('🔗 SessionContext - Forcing new session ID generation')
-    localStorage.removeItem('scribeSessionId')
-    const newSessionId = generateSessionId()
-    return newSessionId
-  }
-
-  const value: SessionContextType = {
-    sessionId,
-    generateSessionId,
-    setSessionId,
-    clearSessionId,
-    forceNewSessionId,
-  }
-
-  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
+  return <UserCodeContext.Provider value={value}>{children}</UserCodeContext.Provider>
 }
 
-export const useSession = (): SessionContextType => {
-  const context = useContext(SessionContext)
+export const useUserCode = (): UserCodeContextType => {
+  const context = useContext(UserCodeContext)
   if (context === undefined) {
-    throw new Error('useSession must be used within a SessionProvider')
+    throw new Error('useUserCode must be used within a UserCodeProvider')
   }
   return context
 }
 
-export default SessionContext
+export const SessionProvider = UserCodeProvider
+export const useSession = useUserCode
+export default UserCodeContext
