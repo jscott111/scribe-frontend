@@ -449,9 +449,48 @@ function InputApp() {
   }, [sourceLanguage, speechConfig])
 
   const stopGoogleSpeechRecognition = useCallback(() => {
+    // If there's current interim transcription, submit it as final
+    if (currentTranscription.trim()) {
+      const uniqueId = `interim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const newBubble: MessageBubble = {
+        id: uniqueId,
+        text: currentTranscription,
+        timestamp: new Date(),
+        isComplete: false
+      }
+      
+      setTranscriptionBubbles(prev => [...prev, newBubble])
+      
+      // Send to backend for translation and distribution to listeners
+      if (socketRef.current && isSocketConnected) {
+        socketRef.current.emit('speechTranscription', {
+          transcription: currentTranscription,
+          sourceLanguage: sourceLanguage,
+          bubbleId: uniqueId
+        })
+      }
+      
+      // Mark as complete after a short delay
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+      timeoutRef.current = setTimeout(() => {
+        setTranscriptionBubbles((prev) =>
+          prev.map((bubble) =>
+            bubble.id === uniqueId
+              ? { ...bubble, isComplete: true }
+              : bubble
+          )
+        )
+      }, 250)
+    }
+    
+    // Reset current transcription
+    setCurrentTranscription('')
+    
     googleSpeechService.stopRecognition()
     setIsTranslating(false)
-  }, [])
+  }, [currentTranscription, socketRef, isSocketConnected, sourceLanguage])
 
   // Handle Google Cloud Speech-to-Text
   useEffect(() => {
