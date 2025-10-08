@@ -1,3 +1,7 @@
+/* Import multiple emoji fonts for better flag emoji support */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Emoji&display=swap');
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -12,6 +16,61 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+}
+
+/* Enhanced emoji fallback for better flag emoji support on Chrome Windows */
+.emoji-fallback {
+  font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', 'Noto Emoji', 'Android Emoji', 'EmojiSymbols', 'EmojiOne Mozilla', 'Segoe UI Symbol', sans-serif;
+  font-variant-emoji: emoji;
+  font-feature-settings: "liga" 1, "kern" 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-feature-settings: "liga" 1, "kern" 1;
+  -moz-font-feature-settings: "liga" 1, "kern" 1;
+}
+
+/* Flag emoji specific styling with enhanced font loading */
+.flag-emoji {
+  display: inline-block;
+  font-family: 'Noto Color Emoji', 'Noto Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Twemoji Mozilla', 'Android Emoji', 'EmojiSymbols', 'EmojiOne Mozilla', 'Segoe UI Symbol', sans-serif;
+  font-variant-emoji: emoji;
+  font-feature-settings: "liga" 1, "kern" 1, "calt" 1;
+  text-rendering: optimizeLegibility;
+  -webkit-font-feature-settings: "liga" 1, "kern" 1, "calt" 1;
+  -moz-font-feature-settings: "liga" 1, "kern" 1, "calt" 1;
+  font-size: 1.2em;
+  line-height: 1;
+  vertical-align: middle;
+  min-width: 1.2em;
+  text-align: center;
+  font-display: swap;
+}
+
+/* Alternative flag display using images */
+.flag-image {
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Fallback for when flag emojis don't render properly */
+.flag-emoji::before {
+  content: attr(data-fallback);
+  display: none;
+}
+
+.flag-emoji.fallback::before {
+  display: inline;
+}
+
+.flag-emoji.fallback {
+  font-family: inherit;
+  background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-weight: bold;
+  font-size: 0.9em;
 }
 
 * {

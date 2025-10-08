@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { LanguageCode, getSupportedLanguages } from '../enums/azureLangs'
 import { MenuItem, Select } from '@mui/material'
+import { createHybridFlagElement } from '../utils/flagEmojiUtils.tsx'
 
 interface OutputLanguageSelectorProps {
   label: string
@@ -45,7 +46,7 @@ const OutputLanguageSelector: React.FC<OutputLanguageSelectorProps> = ({
     >
       {getSupportedLanguages().map((language) => (
         <MenuItem key={language.code} value={language.code} sx={{ fontSize: '1rem' }}>
-          <span style={{ marginRight: '0.5rem' }}>{language.flag}</span>
+          <span style={{ marginRight: '0.5rem' }}>{createHybridFlagElement(language.code, 18)}</span>
           {language.name}
         </MenuItem>
       ))}
