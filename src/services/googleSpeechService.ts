@@ -20,6 +20,7 @@ interface SpeechRecognitionCallbacks {
   onError: (error: Error) => void;
   onStart: () => void;
   onEnd: () => void;
+  onAudioLevel?: (level: number) => void; // New callback for audio level updates
 }
 
 class GoogleSpeechService {
@@ -39,6 +40,7 @@ class GoogleSpeechService {
   private wordCountTimer: NodeJS.Timeout | null = null;
   private socket: any = null; // Socket.IO connection
   private hasReceivedFinalResult = false; // Track if we've received a final result from Google Cloud
+  private audioLevelInterval: NodeJS.Timeout | null = null; // For audio level monitoring
 
   constructor() {
     this.config = {
@@ -179,6 +181,9 @@ class GoogleSpeechService {
       // Start processing
       this.callbacks?.onStart();
 
+      // Start audio level monitoring
+      this.startAudioLevelMonitoring();
+
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
       // Stop streaming on error
@@ -198,6 +203,9 @@ class GoogleSpeechService {
     this.isRecording = false;
     this.isPaused = false;
     this.clearTimers();
+
+    // Stop audio level monitoring
+    this.stopAudioLevelMonitoring();
 
     // Disconnect script processor
     if (this.scriptProcessor) {
@@ -394,6 +402,55 @@ class GoogleSpeechService {
     if (this.wordCountTimer) {
       clearTimeout(this.wordCountTimer);
       this.wordCountTimer = null;
+    }
+  }
+
+  /**
+   * Start monitoring audio levels for visual feedback
+   */
+  private startAudioLevelMonitoring(): void {
+    if (!this.analyser || !this.callbacks?.onAudioLevel) {
+      return;
+    }
+
+    // Configure analyser for better frequency analysis
+    this.analyser.fftSize = 256;
+    this.analyser.smoothingTimeConstant = 0.8;
+
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+    const monitorAudioLevel = () => {
+      if (!this.isRecording || !this.analyser) {
+        return;
+      }
+
+      this.analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate RMS (Root Mean Square) for volume level
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+      
+      // Normalize to 0-1 range and apply some smoothing
+      const normalizedLevel = Math.min(1, rms / 128);
+      
+      // Call the callback with the audio level
+      this.callbacks?.onAudioLevel?.(normalizedLevel);
+    };
+
+    // Monitor audio levels every 50ms for smooth updates
+    this.audioLevelInterval = setInterval(monitorAudioLevel, 50);
+  }
+
+  /**
+   * Stop monitoring audio levels
+   */
+  private stopAudioLevelMonitoring(): void {
+    if (this.audioLevelInterval) {
+      clearInterval(this.audioLevelInterval);
+      this.audioLevelInterval = null;
     }
   }
 }
