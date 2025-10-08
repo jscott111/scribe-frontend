@@ -177,8 +177,43 @@ function InputApp() {
   }
   const [isTranslating, setIsTranslating] = useState(false)
   const [shouldBeListening, setShouldBeListening] = useState(false)
+  const [audioLevel, setAudioLevel] = useState<number>(0) // Audio level from 0 to 1
   const [transcriptionBubbles, setTranscriptionBubbles] = useState<MessageBubble[]>([])
   const [currentTranscription, setCurrentTranscription] = useState('')
+
+  // Calculate button color based on audio level
+  const getButtonColor = () => {
+    if (!isTranslating) {
+      return undefined // Use default Material-UI primary color (#9BB5D1)
+    }
+    
+    // Set a threshold - only start changing color above this level
+    const audioThreshold = 0.30 // Only react to audio levels above 15%
+    const adjustedLevel = Math.max(0, audioLevel - audioThreshold)
+    
+    // Normalize the adjusted level to 0-1 range
+    const normalizedLevel = Math.min(1, adjustedLevel / (1 - audioThreshold))
+    
+    // Apply sensitivity to the normalized level
+    const intensity = Math.min(normalizedLevel * 2, 1) // Reduced from 3 to 2 for smoother transition
+    
+    // Start with your brand's primary color (#9BB5D1) and scale towards a neutral warm tone
+    const brandRed = 155   // #9BB5D1 red component
+    const brandGreen = 181 // #9BB5D1 green component  
+    const brandBlue = 209  // #9BB5D1 blue component
+    
+    // End with a neutral warm color (muted orange/brown)
+    const endRed = 180    // Neutral warm red
+    const endGreen = 120  // Neutral warm green
+    const endBlue = 80    // Neutral warm blue
+    
+    // Scale from brand color to neutral warm color based on intensity
+    const red = Math.floor(brandRed + ((endRed - brandRed) * intensity))
+    const green = Math.floor(brandGreen + ((endGreen - brandGreen) * intensity))
+    const blue = Math.floor(brandBlue + ((endBlue - brandBlue) * intensity))
+    
+    return `rgb(${red}, ${green}, ${blue})`
+  }
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [isSocketConnecting, setIsSocketConnecting] = useState(false)
   const [isSocketConnected, setIsSocketConnected] = useState(false)
@@ -406,6 +441,7 @@ function InputApp() {
         },
         onEnd: () => {
           setIsTranslating(false)
+          setAudioLevel(0) // Reset audio level when recording ends
         },
         onInterimResult: (result) => {
           setCurrentTranscription(result.transcript)
@@ -439,6 +475,9 @@ function InputApp() {
           console.error('❌ Google Speech recognition error:', error)
           alert('Speech recognition error: ' + error.message);
           setIsTranslating(false)
+        },
+        onAudioLevel: (level) => {
+          setAudioLevel(level)
         }
       })
     } catch (error) {
@@ -699,7 +738,9 @@ function InputApp() {
             color="primary"
             sx={{
               borderRadius: '2rem',
-              marginTop: '2rem'
+              marginTop: '2rem',
+              backgroundColor: getButtonColor(),
+              transition: 'background-color 0.1s ease-out'
             }}
             onClick={() => {
               if (isTranslating) {
@@ -799,7 +840,9 @@ function InputApp() {
                 sx={{
                   borderRadius: '2rem',
                   marginTop: '1rem',
-                  padding: '0.75rem'
+                  padding: '0.75rem',
+                  backgroundColor: getButtonColor(),
+                  transition: 'background-color 0.1s ease-out'
                 }}
                 onClick={() => {
                   if (isTranslating) {

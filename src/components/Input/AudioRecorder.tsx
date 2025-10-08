@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { LanguageCode } from '../enums/azureLangs'
+import { LanguageCode } from '../../enums/googleLangs'
 import { io, Socket } from 'socket.io-client'
+import GoogleSpeechService from '../../services/googleSpeechService'
 
 declare global {
   interface Window {
@@ -33,12 +34,12 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string>('')
   const [currentTranscription, setCurrentTranscription] = useState<string>('')
+  const [audioLevel, setAudioLevel] = useState<number>(0) // Audio level from 0 to 1
   const socketRef = useRef<Socket | null>(null)
   const recognitionRef = useRef<any>(null)
 
   useEffect(() => {
-    // Initialize WebSocket connection with authentication
-    socketRef.current = io(import.meta.env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca', {
+    socketRef.current = io((import.meta as any).env.VITE_BACKEND_URL || 'https://api.scribe-ai.ca', {
       auth: {
         token: accessToken,
         sessionId: sessionId
@@ -76,63 +77,49 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
       setError('')
       setIsProcessing(true)
       setCurrentTranscription('')
+      setAudioLevel(0)
 
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        throw new Error('Speech recognition not supported in this browser')
+      // Initialize Google Speech Service if not already done
+      if (!GoogleSpeechService.isInitializedWithSocket(socketRef.current)) {
+        await GoogleSpeechService.initialize(socketRef.current)
       }
 
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-      recognitionRef.current = new SpeechRecognition()
-      
-      recognitionRef.current.continuous = true
-      recognitionRef.current.interimResults = true
-      recognitionRef.current.lang = sourceLanguage
-      
-      recognitionRef.current.onstart = () => {
-        console.log('🎤 Speech recognition started')
-        setIsRecording(true)
-      }
-      
-      recognitionRef.current.onresult = (event) => {
-        let finalTranscript = ''
-        let interimTranscript = ''
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript
-          } else {
-            interimTranscript += transcript
+      // Start recognition with callbacks including audio level monitoring
+      await GoogleSpeechService.startRecognition({
+        onInterimResult: (result) => {
+          setCurrentTranscription(result.transcript)
+        },
+        onFinalResult: (result) => {
+          setCurrentTranscription(result.transcript)
+          if (socketRef.current) {
+            console.log('🎤 Sending final transcription:', result.transcript)
+            socketRef.current.emit('speechTranscription', {
+              transcription: result.transcript,
+              sourceLanguage: sourceLanguage,
+              targetLanguage: targetLanguage
+            })
           }
+        },
+        onError: (error) => {
+          console.error('Speech recognition error:', error)
+          setError(`Speech recognition error: ${error.message}`)
+          setIsProcessing(false)
+          setIsRecording(false)
+        },
+        onStart: () => {
+          console.log('🎤 Speech recognition started')
+          setIsRecording(true)
+        },
+        onEnd: () => {
+          console.log('🎤 Speech recognition ended')
+          setIsRecording(false)
+          setIsProcessing(false)
+          setAudioLevel(0)
+        },
+        onAudioLevel: (level) => {
+          setAudioLevel(level)
         }
-        
-        setCurrentTranscription(finalTranscript + interimTranscript)
-        
-        if (finalTranscript && socketRef.current) {
-          console.log('🎤 Sending real transcription:', finalTranscript)
-          
-          socketRef.current.emit('speechTranscription', {
-            transcription: finalTranscript,
-            sourceLanguage: sourceLanguage,
-            targetLanguage: targetLanguage
-          })
-        }
-      }
-      
-      recognitionRef.current.onerror = (event) => {
-        console.error('Speech recognition error:', event.error)
-        setError(`Speech recognition error: ${event.error}`)
-        setIsProcessing(false)
-        setIsRecording(false)
-      }
-      
-      recognitionRef.current.onend = () => {
-        console.log('🎤 Speech recognition ended')
-        setIsRecording(false)
-        setIsProcessing(false)
-      }
-      
-      recognitionRef.current.start()
+      })
       
     } catch (err) {
       setError('Failed to start speech recognition. Please check browser support.')
@@ -142,14 +129,11 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
   }
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop()
-      recognitionRef.current = null
-    }
-    
+    GoogleSpeechService.stopRecognition()
     setIsRecording(false)
     setIsProcessing(false)
     setCurrentTranscription('')
+    setAudioLevel(0)
   }
 
   const handleToggleRecording = () => {
@@ -158,6 +142,21 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
     } else {
       startRecording()
     }
+  }
+
+  // Calculate button color based on audio level
+  const getButtonColor = () => {
+    if (!isRecording) {
+      return '#3b82f6' // Default blue
+    }
+    
+    // Create a gradient from blue (quiet) to red (loud)
+    const intensity = Math.min(audioLevel * 2, 1) // Amplify the effect
+    const red = Math.floor(59 + (196 * intensity)) // 59 to 255
+    const green = Math.floor(130 - (130 * intensity)) // 130 to 0
+    const blue = Math.floor(246 - (246 * intensity)) // 246 to 0
+    
+    return `rgb(${red}, ${green}, ${blue})`
   }
 
   return (
@@ -177,6 +176,10 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
           onClick={handleToggleRecording}
           disabled={!isConnected}
           type="button"
+          style={{
+            backgroundColor: getButtonColor(),
+            transition: 'background-color 0.1s ease-out'
+          }}
         >
           {isRecording ? '⏹️ Stop' : '🎤 Start Recording'}
         </button>
@@ -199,9 +202,23 @@ const AudioRecorder: React.FC<AudioRecorderProps> = ({
         <p>Source: <strong>{sourceLanguage}</strong></p>
         <p>Target: <strong>{targetLanguage}</strong></p>
         {isRecording && (
-          <p className="recording-info">
-            🎵 Listening and transcribing in real-time...
-          </p>
+          <div className="recording-info">
+            <p>🎵 Listening and transcribing in real-time...</p>
+            <div className="audio-level-indicator">
+              <span>Audio Level: </span>
+              <div className="audio-level-bar">
+                <div 
+                  className="audio-level-fill"
+                  style={{ 
+                    width: `${audioLevel * 100}%`,
+                    backgroundColor: getButtonColor(),
+                    transition: 'width 0.1s ease-out, background-color 0.1s ease-out'
+                  }}
+                />
+              </div>
+              <span className="audio-level-text">{Math.round(audioLevel * 100)}%</span>
+            </div>
+          </div>
         )}
       </div>
     </div>
