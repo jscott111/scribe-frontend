@@ -18,6 +18,7 @@ import { useUserCode } from '../../contexts/SessionContext'
 import ProfileModal from '../Profile/ProfileModal'
 import googleSpeechService from '../../services/googleSpeechService'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
+import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 
 interface MessageBubble {
   id: string
@@ -188,7 +189,7 @@ function InputApp() {
     }
     
     // Set a threshold - only start changing color above this level
-    const audioThreshold = 0.30 // Only react to audio levels above 15%
+    const audioThreshold = 0.20 // Only react to audio levels above 15%
     const adjustedLevel = Math.max(0, audioLevel - audioThreshold)
     
     // Normalize the adjusted level to 0-1 range
@@ -711,7 +712,11 @@ function InputApp() {
                     <Chip
                       key={lang}
                       color="primary"
-                      label={`${getLanguageInfo(lang as LanguageCode).flag} ${count}`}
+                      label={
+                        <span>
+                          {createHybridFlagElement(lang as LanguageCode, 16)} {count}
+                        </span>
+                      }
                       size="small"
                       variant="outlined"
                       sx={{ fontSize: '0.75rem' }}

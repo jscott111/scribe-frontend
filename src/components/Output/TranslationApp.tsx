@@ -9,6 +9,7 @@ import { CONFIG } from '../../config/urls'
 import { useUserCode } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
+import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 
 const LandingPageContainer = styled.div`
   display: flex;
@@ -578,7 +579,7 @@ function TranslationApp() {
               Back
             </BackButton>
             <Typography variant="subsectionHeader" sx={{ fontSize: '1rem', fontWeight: '600' }}>
-              {getLanguageInfo(targetLanguage).name} {getLanguageInfo(targetLanguage).flag}
+              {getLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
             </Typography>
           </MobileHeaderLeft>
           
@@ -625,7 +626,7 @@ function TranslationApp() {
               />
             </Box>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
-              Translating to {getLanguageInfo(targetLanguage).name} {getLanguageInfo(targetLanguage).flag}
+              Translating to {getLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
             </Typography>
           </HeaderSection>
 
