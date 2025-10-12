@@ -276,6 +276,9 @@ function InputApp() {
       if ((socketRef.current as any).connectionCountInterval) {
         clearInterval((socketRef.current as any).connectionCountInterval)
       }
+      if ((socketRef.current as any).heartbeatInterval) {
+        clearInterval((socketRef.current as any).heartbeatInterval)
+      }
       socketRef.current.disconnect()
       socketRef.current = null
     }
@@ -306,6 +309,17 @@ function InputApp() {
       }, 5000)
       
       ;(socketRef.current as any).connectionCountInterval = intervalId
+      
+      // Set up heartbeat mechanism
+      const heartbeatInterval = setInterval(() => {
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('ping')
+        } else {
+          clearInterval(heartbeatInterval)
+        }
+      }, 15000) // Send ping every 15 seconds
+      
+      ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
 
     socketRef.current.on('interimTranscription', (data) => {
@@ -376,11 +390,18 @@ function InputApp() {
       }
     })
 
+    socketRef.current.on('pong', () => {
+      console.log('💓 Received pong from server')
+    })
+
     return () => {
       if (socketRef.current) {
         console.log('🔌 Cleaning up socket connection')
         if ((socketRef.current as any).connectionCountInterval) {
           clearInterval((socketRef.current as any).connectionCountInterval)
+        }
+        if ((socketRef.current as any).heartbeatInterval) {
+          clearInterval((socketRef.current as any).heartbeatInterval)
         }
         socketRef.current.disconnect()
         socketRef.current = null

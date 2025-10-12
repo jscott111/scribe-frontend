@@ -308,6 +308,17 @@ function TranslationApp() {
     socketRef.current.on('connect', () => {
       setIsConnecting(false)
       setIsConnected(true)
+      
+      // Set up heartbeat mechanism
+      const heartbeatInterval = setInterval(() => {
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('ping')
+        } else {
+          clearInterval(heartbeatInterval)
+        }
+      }, 15000) // Send ping every 15 seconds
+      
+      ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
     
     socketRef.current.on('disconnect', (reason) => {
@@ -373,8 +384,15 @@ function TranslationApp() {
       setIsConnected(false)
     })
 
+    socketRef.current.on('pong', () => {
+      console.log('💓 TranslationApp received pong from server')
+    })
+
     return () => {
       if (socketRef.current) {
+        if ((socketRef.current as any).heartbeatInterval) {
+          clearInterval((socketRef.current as any).heartbeatInterval)
+        }
         socketRef.current.disconnect()
       }
       setIsConnecting(false)

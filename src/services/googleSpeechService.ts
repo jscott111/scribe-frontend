@@ -41,6 +41,9 @@ class GoogleSpeechService {
   private socket: any = null; // Socket.IO connection
   private hasReceivedFinalResult = false; // Track if we've received a final result from Google Cloud
   private audioLevelInterval: NodeJS.Timeout | null = null; // For audio level monitoring
+  private messageQueue: Array<{data: any, timestamp: number, retries: number}> = []; // Message queue for failed transmissions
+  private maxRetries = 3; // Maximum number of retry attempts
+  private queueProcessingInterval: NodeJS.Timeout | null = null; // Interval for processing queued messages
 
   constructor() {
     this.config = {
@@ -111,6 +114,17 @@ class GoogleSpeechService {
         console.log('🔄 Stream restarted with new bubble ID:', data.newBubbleId);
         this.currentBubbleId = data.newBubbleId;
         this.hasReceivedFinalResult = false;
+      });
+      
+      // Listen for stream restart requests from backend
+      this.socket.on('streamRestart', (data: any) => {
+        console.log('🔄 Backend requested stream restart:', data.reason);
+        if (this.isRecording) {
+          // Generate new bubble ID and continue recording
+          this.currentBubbleId = this.generateBubbleId();
+          this.hasReceivedFinalResult = false;
+          console.log('🔄 Stream restarted with new bubble ID:', this.currentBubbleId);
+        }
       });
       
       // Request microphone access with simpler constraints
@@ -274,6 +288,7 @@ class GoogleSpeechService {
     
     this.stopRecognition();
     this.clearTimers();
+    this.clearMessageQueue();
 
     // Notify backend to stop streaming
     if (this.socket) {
@@ -335,8 +350,7 @@ class GoogleSpeechService {
     
     const base64Audio = this.arrayBufferToBase64(buffer);
     
-    
-    this.socket.emit('googleSpeechTranscription', {
+    const messageData = {
       audioData: base64Audio,
       sourceLanguage: this.config.languageCode,
       bubbleId: this.currentBubbleId,
@@ -347,7 +361,9 @@ class GoogleSpeechService {
       maxWordsPerBubble: this.config.maxWordsPerBubble,
       audioFormat: 'LINEAR16', // Indicate this is raw LINEAR16 data
       sampleRate: 48000 // Current sample rate from AudioContext
-    });
+    };
+    
+    this.sendWithRetry('googleSpeechTranscription', messageData);
   }
 
   private processAudioChunk(audioBlob: Blob): void {
@@ -451,6 +467,99 @@ class GoogleSpeechService {
     if (this.audioLevelInterval) {
       clearInterval(this.audioLevelInterval);
       this.audioLevelInterval = null;
+    }
+  }
+
+  /**
+   * Send message with retry logic
+   */
+  private sendWithRetry(event: string, data: any): void {
+    if (!this.socket || !this.socket.connected) {
+      console.log('📦 Socket not connected, queuing message');
+      this.queueMessage(event, data);
+      return;
+    }
+
+    try {
+      this.socket.emit(event, data);
+    } catch (error) {
+      console.error('❌ Failed to send message:', error);
+      this.queueMessage(event, data);
+    }
+  }
+
+  /**
+   * Queue message for retry
+   */
+  private queueMessage(event: string, data: any): void {
+    this.messageQueue.push({
+      data: { event, data },
+      timestamp: Date.now(),
+      retries: 0
+    });
+
+    // Start queue processing if not already running
+    if (!this.queueProcessingInterval) {
+      this.startQueueProcessing();
+    }
+  }
+
+  /**
+   * Start processing queued messages
+   */
+  private startQueueProcessing(): void {
+    this.queueProcessingInterval = setInterval(() => {
+      this.processMessageQueue();
+    }, 1000); // Process queue every second
+  }
+
+  /**
+   * Process queued messages
+   */
+  private processMessageQueue(): void {
+    if (!this.socket || !this.socket.connected) {
+      return; // Wait for connection
+    }
+
+    const now = Date.now();
+    const messagesToProcess = this.messageQueue.filter(msg => 
+      msg.retries < this.maxRetries && (now - msg.timestamp) > 1000
+    );
+
+    messagesToProcess.forEach(msg => {
+      try {
+        this.socket.emit(msg.data.event, msg.data.data);
+        // Remove successfully sent message
+        const index = this.messageQueue.indexOf(msg);
+        if (index > -1) {
+          this.messageQueue.splice(index, 1);
+        }
+      } catch (error) {
+        console.error('❌ Failed to retry message:', error);
+        msg.retries++;
+      }
+    });
+
+    // Remove old messages that exceeded max retries
+    this.messageQueue = this.messageQueue.filter(msg => 
+      msg.retries < this.maxRetries && (now - msg.timestamp) < 30000 // Keep for 30 seconds max
+    );
+
+    // Stop processing if queue is empty
+    if (this.messageQueue.length === 0 && this.queueProcessingInterval) {
+      clearInterval(this.queueProcessingInterval);
+      this.queueProcessingInterval = null;
+    }
+  }
+
+  /**
+   * Clear message queue
+   */
+  private clearMessageQueue(): void {
+    this.messageQueue = [];
+    if (this.queueProcessingInterval) {
+      clearInterval(this.queueProcessingInterval);
+      this.queueProcessingInterval = null;
     }
   }
 }
