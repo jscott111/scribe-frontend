@@ -3,7 +3,7 @@ import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
 import { LanguageCode, getLanguageInfo } from '../../enums/googleLangs'
-import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip, Slider, Typography as MuiTypography } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -70,11 +70,41 @@ const LeftPanel = styled(Paper)`
   border-radius: 2rem !important;
   margin: 1rem;
   margin-right: 0.5rem;
-  padding: 1rem;
+  padding: 0;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   height: calc(100% - 2rem);
+  overflow: hidden;
+`
+
+const LeftPanelContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  
+  /* Custom scrollbar styling */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+  
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  }
 `
 
 const RightPanel = styled(Paper)<{ isMobile: boolean }>`
@@ -149,9 +179,9 @@ const RightPanelContent = styled.div<{ isMobile: boolean }>`
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: ${props => props.isMobile ? '1rem' : '1rem'};
+  padding: ${props => props.isMobile ? '0.75rem' : '1rem'};
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: ${props => props.isMobile ? 'auto' : 'hidden'};
 `
 
 function InputApp() {
@@ -222,10 +252,13 @@ function InputApp() {
   const [connectionInfo, setConnectionInfo] = useState<{userCode: string, connectionUrl: string, qrCodeUrl: string, shareText: string} | null>(null)
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null)
   const [speechConfig, setSpeechConfig] = useState({
-    speechEndTimeout: 1, // Balanced timeout for natural speech patterns
+    speechEndTimeout: 1.0, // Balanced timeout for natural speech patterns
     maxWordsPerBubble: 15,
     speechStartTimeout: 5.0
   })
+  const [pendingTimeoutChange, setPendingTimeoutChange] = useState<number | null>(null)
+  const [lastAudioActivity, setLastAudioActivity] = useState<number>(Date.now())
+  const [isDetectingPause, setIsDetectingPause] = useState(false)
   const socketRef = React.useRef<Socket | null>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
@@ -454,6 +487,14 @@ function InputApp() {
       googleSpeechService.updateConfig({
         languageCode: sourceLanguage,
         speechStartTimeout: speechConfig.speechStartTimeout,
+        speechEndTimeout: speechConfig.speechEndTimeout,
+        maxWordsPerBubble: speechConfig.maxWordsPerBubble
+      })
+
+      console.log('🎤 Starting speech recognition with config:', {
+        languageCode: sourceLanguage,
+        speechEndTimeout: speechConfig.speechEndTimeout,
+        speechStartTimeout: speechConfig.speechStartTimeout,
         maxWordsPerBubble: speechConfig.maxWordsPerBubble
       })
 
@@ -564,6 +605,54 @@ function InputApp() {
     }
   }, [shouldBeListening, isSocketConnected, startGoogleSpeechRecognition, stopGoogleSpeechRecognition])
 
+  // Pause detection for deferred timeout changes
+  useEffect(() => {
+    if (!isTranslating || !pendingTimeoutChange) return
+
+    const pauseDetectionInterval = setInterval(() => {
+      const timeSinceLastAudio = Date.now() - lastAudioActivity
+      const PAUSE_THRESHOLD = 2000 // 2 seconds of silence
+
+      if (timeSinceLastAudio > PAUSE_THRESHOLD && !isDetectingPause) {
+        console.log('🔇 Detected natural pause, applying timeout change...')
+        setIsDetectingPause(true)
+        
+        // Store the pending timeout before clearing it
+        const newTimeout = pendingTimeoutChange
+        
+        // Apply the pending timeout change
+        setSpeechConfig(prev => ({
+          ...prev,
+          speechEndTimeout: newTimeout
+        }))
+        
+        // Clear pending change
+        setPendingTimeoutChange(null)
+        
+        // Restart the speech recognition with new timeout
+        setTimeout(() => {
+          if (isTranslating) {
+            console.log('🔄 Restarting speech recognition with new timeout:', newTimeout)
+            stopGoogleSpeechRecognition()
+            setTimeout(() => {
+              startGoogleSpeechRecognition()
+              setIsDetectingPause(false)
+            }, 500) // Small delay to ensure clean restart
+          }
+        }, 100)
+      }
+    }, 500) // Check every 500ms
+
+    return () => clearInterval(pauseDetectionInterval)
+  }, [isTranslating, pendingTimeoutChange, lastAudioActivity, isDetectingPause])
+
+  // Update audio activity timestamp when audio level changes
+  useEffect(() => {
+    if (audioLevel > 0.1) { // Threshold for detecting speech
+      setLastAudioActivity(Date.now())
+    }
+  }, [audioLevel])
+
 
   const downloadQRCode = () => {
     if (connectionInfo?.qrCodeUrl) {
@@ -653,13 +742,14 @@ function InputApp() {
         </MobileHeader>
       ) : (
         <LeftPanel elevation={3}>
-          <Box sx={{ height: '7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <img 
-              src="/scribe-logo-name-transparent.png" 
-              alt="Scribe" 
-              style={{ height: '100%', width: 'auto' }}
-            />
-          </Box>
+          <LeftPanelContent>
+            <Box sx={{ height: '7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img 
+                src="/scribe-logo-name-transparent.png" 
+                alt="Scribe" 
+                style={{ height: '100%', width: 'auto' }}
+              />
+            </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Tooltip title="View Profile" arrow placement="bottom">
               <Box 
@@ -759,6 +849,76 @@ function InputApp() {
               disabled={isTranslating}
             />
           </Box>
+          
+          {/* Pause Timeout Slider */}
+          <Box sx={{ marginTop: '1.5rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '1rem' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              <Tooltip title="How long to wait before finalizing speech (seconds)" arrow placement="top">
+                <MuiTypography variant="body2" sx={{ color: 'text.secondary', fontWeight: 'medium', cursor: 'help' }}>
+                  Pause Timeout
+                </MuiTypography>
+              </Tooltip>
+              {pendingTimeoutChange && (
+                <Tooltip title={`Change queued: ${pendingTimeoutChange}s (will apply on next pause)`} arrow placement="top">
+                  <MuiTypography variant="caption" sx={{ 
+                    color: 'warning.main', 
+                    fontWeight: 'medium',
+                    cursor: 'help'
+                  }}>
+                    ⏳ {pendingTimeoutChange}s
+                  </MuiTypography>
+                </Tooltip>
+              )}
+            </Box>
+            <Box sx={{ padding: '0 0.5rem' }}>
+              <Slider
+                value={pendingTimeoutChange || speechConfig.speechEndTimeout}
+                onChange={(_, value) => {
+                  const newTimeout = value as number
+                  if (isTranslating) {
+                    // During translation, queue the change for next pause
+                    setPendingTimeoutChange(newTimeout)
+                    console.log(`⏳ Timeout change queued: ${newTimeout}s (will apply on next pause)`)
+                  } else {
+                    // Not translating, apply immediately
+                    setSpeechConfig(prev => ({
+                      ...prev,
+                      speechEndTimeout: newTimeout
+                    }))
+                  }
+                }}
+                min={0.5}
+                max={3.0}
+                step={0.1}
+                sx={{
+                  color: 'primary.main',
+                  '& .MuiSlider-thumb': {
+                    backgroundColor: pendingTimeoutChange ? 'warning.main' : 'primary.main',
+                    '&:hover': {
+                      backgroundColor: pendingTimeoutChange ? 'warning.dark' : 'primary.dark',
+                    },
+                  },
+                  '& .MuiSlider-track': {
+                    backgroundColor: pendingTimeoutChange ? 'warning.main' : 'primary.main',
+                  },
+                  '& .MuiSlider-rail': {
+                    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                  },
+                }}
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                <MuiTypography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                  0.5s
+                </MuiTypography>
+                <MuiTypography variant="caption" sx={{ color: 'primary.main', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                  {pendingTimeoutChange || speechConfig.speechEndTimeout}s
+                </MuiTypography>
+                <MuiTypography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                  3.0s
+                </MuiTypography>
+              </Box>
+            </Box>
+          </Box>
           <Button
             variant="contained"
             color="primary"
@@ -825,13 +985,14 @@ function InputApp() {
               Download QR Code
             </Button>
           </QRCodeSection>
+          </LeftPanelContent>
         </LeftPanel>
       )}
 
       <RightPanel elevation={3} isMobile={isMobile}>
         <RightPanelContent isMobile={isMobile}>
           {isMobile && (
-            <Box sx={{ marginBottom: '1rem' }}>
+            <Box sx={{ marginBottom: '0.25rem' }}>
               <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
                 <InputLanguageSelector
                   label="Source Language"
@@ -839,12 +1000,82 @@ function InputApp() {
                   onLanguageChange={handleSourceLanguageChange}
                 />
               </Box>
-              <Box sx={{ marginTop: '1rem', width: '100%' }}>
+              <Box sx={{ marginTop: '0.75rem', width: '100%' }}>
                 <DeviceSelector
                   selectedDeviceId={selectedDeviceId}
                   onDeviceChange={setSelectedDeviceId}
                   disabled={isTranslating}
                 />
+              </Box>
+              
+              {/* Mobile Pause Timeout Slider */}
+              <Box sx={{ marginTop: '0.75rem', padding: '0.75rem', backgroundColor: 'rgba(255, 255, 255, 0.05)', borderRadius: '1rem', width: '100%' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <Tooltip title="How long to wait before finalizing speech (seconds)" arrow placement="top">
+                    <MuiTypography variant="body2" sx={{ color: 'text.secondary', fontWeight: 'medium', cursor: 'help' }}>
+                      Pause Timeout
+                    </MuiTypography>
+                  </Tooltip>
+                  {pendingTimeoutChange && (
+                    <Tooltip title={`Change queued: ${pendingTimeoutChange}s (will apply on next pause)`} arrow placement="top">
+                      <MuiTypography variant="caption" sx={{ 
+                        color: 'warning.main', 
+                        fontWeight: 'medium',
+                        cursor: 'help'
+                      }}>
+                        ⏳ {pendingTimeoutChange}s
+                      </MuiTypography>
+                    </Tooltip>
+                  )}
+                </Box>
+                <Box sx={{ padding: '0 0.5rem' }}>
+                  <Slider
+                    value={pendingTimeoutChange || speechConfig.speechEndTimeout}
+                    onChange={(_, value) => {
+                      const newTimeout = value as number
+                      if (isTranslating) {
+                        // During translation, queue the change for next pause
+                        setPendingTimeoutChange(newTimeout)
+                        console.log(`⏳ Timeout change queued: ${newTimeout}s (will apply on next pause)`)
+                      } else {
+                        // Not translating, apply immediately
+                        setSpeechConfig(prev => ({
+                          ...prev,
+                          speechEndTimeout: newTimeout
+                        }))
+                      }
+                    }}
+                    min={0.5}
+                    max={3.0}
+                    step={0.1}
+                    sx={{
+                      color: 'primary.main',
+                      '& .MuiSlider-thumb': {
+                        backgroundColor: pendingTimeoutChange ? 'warning.main' : 'primary.main',
+                        '&:hover': {
+                          backgroundColor: pendingTimeoutChange ? 'warning.dark' : 'primary.dark',
+                        },
+                      },
+                      '& .MuiSlider-track': {
+                        backgroundColor: pendingTimeoutChange ? 'warning.main' : 'primary.main',
+                      },
+                      '& .MuiSlider-rail': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                      },
+                    }}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+                    <MuiTypography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                      0.5s
+                    </MuiTypography>
+                    <MuiTypography variant="caption" sx={{ color: 'primary.main', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                      {pendingTimeoutChange || speechConfig.speechEndTimeout}s
+                    </MuiTypography>
+                    <MuiTypography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                      3.0s
+                    </MuiTypography>
+                  </Box>
+                </Box>
               </Box>
               <Button
                 variant="outlined"
@@ -853,7 +1084,7 @@ function InputApp() {
                 onClick={() => setQrModalOpen(true)}
                 sx={{
                   borderRadius: '2rem',
-                  marginTop: '1rem',
+                  marginTop: '0.75rem',
                   padding: '0.75rem'
                 }}
               >
@@ -865,7 +1096,7 @@ function InputApp() {
                 fullWidth
                 sx={{
                   borderRadius: '2rem',
-                  marginTop: '1rem',
+                  marginTop: '0.75rem',
                   padding: '0.75rem',
                   backgroundColor: getButtonColor(),
                   transition: 'background-color 0.1s ease-out'

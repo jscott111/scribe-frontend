@@ -1,6 +1,7 @@
 interface SpeechRecognitionConfig {
   languageCode: string;
   speechStartTimeout: number; // seconds to wait for speech to start
+  speechEndTimeout: number; // seconds to wait before finalizing speech
   maxWordsPerBubble: number; // maximum words before forcing finalization
   sampleRateHertz: number;
   encoding: string;
@@ -49,6 +50,7 @@ class GoogleSpeechService {
     this.config = {
       languageCode: 'en-CA',
       speechStartTimeout: 5.0,
+      speechEndTimeout: 1.0,
       maxWordsPerBubble: 15,
       sampleRateHertz: 48000,
       encoding: 'WEBM_OPUS'
@@ -387,7 +389,7 @@ class GoogleSpeechService {
       const arrayBuffer = reader.result as ArrayBuffer;
       const base64Audio = this.arrayBufferToBase64(arrayBuffer);
       
-      console.log(`🎤 Frontend: Sending chunk immediately - Size: ${base64Audio.length} chars, Bubble ID: ${this.currentBubbleId}`);
+      console.log(`🎤 Frontend: Sending chunk immediately - Size: ${base64Audio.length} chars, Bubble ID: ${this.currentBubbleId}, speechEndTimeout: ${this.config.speechEndTimeout}s`);
       
       this.socket.emit('googleSpeechTranscription', {
         audioData: base64Audio,
@@ -398,6 +400,7 @@ class GoogleSpeechService {
         finalTranscript: '',
         wordCount: this.currentWordCount,
         maxWordsPerBubble: this.config.maxWordsPerBubble,
+        speechEndTimeout: this.config.speechEndTimeout,
       });
     };
     reader.readAsArrayBuffer(audioBlob);
