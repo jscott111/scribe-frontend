@@ -324,7 +324,6 @@ function TranslationApp() {
     })
     
     socketRef.current.on('disconnect', (reason) => {
-      console.log(`🔌 TranslationApp disconnected: ${reason}`)
       setIsConnecting(false)
       setIsConnected(false)
       
