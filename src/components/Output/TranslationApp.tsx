@@ -300,8 +300,10 @@ function TranslationApp() {
         userCode: userCode
       },
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity, // Keep trying to reconnect indefinitely
       reconnectionDelay: 1000,
+      reconnectionDelayMax: 10000, // Max delay of 10 seconds between attempts
+      randomizationFactor: 0.5, // Add randomness to prevent thundering herd
       timeout: 20000
     })
     
@@ -322,8 +324,18 @@ function TranslationApp() {
     })
     
     socketRef.current.on('disconnect', (reason) => {
+      console.log(`🔌 TranslationApp disconnected: ${reason}`)
       setIsConnecting(false)
       setIsConnected(false)
+      
+      // Clear heartbeat interval on disconnect
+      if ((socketRef.current as any).heartbeatInterval) {
+        clearInterval((socketRef.current as any).heartbeatInterval)
+        ;(socketRef.current as any).heartbeatInterval = null
+      }
+      
+      // If disconnected due to server-side issues, Socket.IO will automatically attempt reconnection
+      // The reconnection logic is configured in the io() options above
     })
     
     socketRef.current.on('connect_error', (error) => {
@@ -370,6 +382,26 @@ function TranslationApp() {
       console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
       setIsConnecting(false)
       setIsConnected(true)
+      
+      // Re-establish target language after reconnection
+      if (targetLanguage && socketRef.current?.connected) {
+        console.log(`🔄 Re-establishing target language: ${targetLanguage}`)
+        socketRef.current.emit('setTargetLanguage', { targetLanguage })
+      }
+      
+      // Restart heartbeat after reconnection
+      const heartbeatInterval = setInterval(() => {
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('ping')
+        } else {
+          clearInterval(heartbeatInterval)
+        }
+      }, 15000) // Send ping every 15 seconds
+      
+      if ((socketRef.current as any).heartbeatInterval) {
+        clearInterval((socketRef.current as any).heartbeatInterval)
+      }
+      ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
 
     socketRef.current.on('reconnect_error', (error) => {
@@ -380,7 +412,22 @@ function TranslationApp() {
 
     socketRef.current.on('reconnect_failed', () => {
       console.error('❌ TranslationApp reconnection failed after all attempts')
-      setIsConnecting(false)
+      // With Infinity attempts, this shouldn't happen, but handle it gracefully
+      setIsConnecting(true) // Keep trying to show we're attempting to reconnect
+      setIsConnected(false)
+      
+      // Attempt manual reconnection after a delay
+      setTimeout(() => {
+        if (socketRef.current && !socketRef.current.connected && userCode && targetLanguage) {
+          console.log('🔄 Attempting manual reconnection...')
+          socketRef.current.connect()
+        }
+      }, 5000)
+    })
+    
+    socketRef.current.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`🔄 TranslationApp reconnection attempt ${attemptNumber}`)
+      setIsConnecting(true)
       setIsConnected(false)
     })
 
