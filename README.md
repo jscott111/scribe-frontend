@@ -137,7 +137,7 @@ src/
 
 ## 🌐 Supported Languages
 
-**100+ languages** supported via Azure Translator API, including:
+**100+ languages** supported via Google Cloud Translation API, including:
 
 - 🇺🇸 English (en)
 - 🇪🇸 Spanish (es)
@@ -226,7 +226,7 @@ src/
 
 ### **2. Translation Flow**
 ```
-📝 Transcription → 🔗 Backend API → 🌐 Azure Translator → 🔗 WebSocket → 🌍 Translation Bubble
+📝 Transcription → 🔗 Backend API → 🌐 Google Cloud Translation → 🔗 WebSocket → 🌍 Translation Bubble
 ```
 
 ### **3. Bubble Lifecycle**
@@ -275,7 +275,7 @@ src/
 - Check backend logs for errors
 
 #### **Language Selection Issues**
-- Ensure language codes match Azure Translator
+- Ensure language codes match Google Cloud Translation
 - Check enum file for supported languages
 - Verify language metadata
 
@@ -283,7 +283,7 @@ src/
 1. Check browser console for errors
 2. Verify backend is running on port 3001
 3. Check WebSocket connection status
-4. Verify Azure Translator API credentials
+4. Verify Google Cloud credentials
 5. Check network connectivity
 
 ## 📱 Browser Compatibility
