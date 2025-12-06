@@ -1,13 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import Typography from '../UI/Typography'
-import { Paper, Chip, Button, Box, useMediaQuery, useTheme, CircularProgress, TextField } from '@mui/material'
+import { Paper, Chip, Button, Box, useMediaQuery, useTheme, CircularProgress, TextField, IconButton, Tooltip } from '@mui/material'
 import OutputLanguageSelector from '../OutputLanguageSelector'
-import { GoogleCTLanguageCode, getCTLanguageInfo, convertSTTToCTLanguage, isValidCTLanguageCode } from '../../enums/googleCTLangs'
+import { GoogleCTLanguageCode, getCTLanguageInfo, isValidCTLanguageCode } from '../../enums/googleCTLangs'
+import { isTTSSupported } from '../../enums/googleTTSLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
 import { useUserCode } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import VolumeUpIcon from '@mui/icons-material/VolumeUp'
+import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 
@@ -195,6 +198,7 @@ interface TranslationBubble {
   targetLanguage: GoogleCTLanguageCode
   timestamp: Date
   isComplete: boolean
+  hasBeenRead?: boolean // Track if this bubble has been read aloud
 }
 
 function TranslationApp() {
@@ -210,6 +214,16 @@ function TranslationApp() {
   const [targetLanguage, setTargetLanguage] = useState<GoogleCTLanguageCode>(getInitialTargetLanguage())
   const [sourceLanguage, setSourceLanguage] = useState<string | undefined>(undefined) // Track source language from speaker
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
+  
+  // Text-to-Speech state
+  const [ttsEnabled, setTtsEnabled] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const speechQueueRef = useRef<string[]>([])
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const isProcessingRef = useRef(false)
+  const ttsEnabledRef = useRef(false) // Ref to track ttsEnabled for callbacks
+  const targetLanguageRef = useRef(targetLanguage) // Ref for target language
+  const queueSpeechRef = useRef<((text: string) => void) | null>(null) // Ref for queueSpeech function
 
   // Handle target language change and save to cookie
   const handleTargetLanguageChange = (language: GoogleCTLanguageCode) => {
@@ -219,7 +233,154 @@ function TranslationApp() {
       path: '/',
       sameSite: 'lax'
     })
+    // Disable TTS if the new language doesn't support it
+    if (!isTTSSupported(language)) {
+      setTtsEnabled(false)
+    }
   }
+  
+  // Check if TTS is available for the current target language
+  const ttsAvailable = isTTSSupported(targetLanguage)
+  
+  // Sync refs with state
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled
+  }, [ttsEnabled])
+  
+  useEffect(() => {
+    targetLanguageRef.current = targetLanguage
+  }, [targetLanguage])
+  
+  // Ref for processQueue to avoid stale closure issues
+  const processQueueRef = useRef<() => void>(() => {})
+  
+  // Initialize audio element for TTS playback
+  useEffect(() => {
+    audioRef.current = new Audio()
+    
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ''
+      }
+    }
+  }, [])
+  
+  // Function to speak text using Google Cloud TTS via backend API
+  const speakText = useCallback(async (text: string, languageCode: string) => {
+    if (!audioRef.current) {
+      return
+    }
+    
+    setIsSpeaking(true)
+    
+    try {
+      const response = await fetch(`${CONFIG.BACKEND_URL}/api/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          languageCode
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `TTS request failed: ${response.status}`)
+      }
+      
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      audioRef.current.onended = () => {
+        URL.revokeObjectURL(audioUrl)
+        setIsSpeaking(false)
+        isProcessingRef.current = false
+        setTimeout(() => processQueueRef.current(), 100)
+      }
+      
+      audioRef.current.onerror = () => {
+        URL.revokeObjectURL(audioUrl)
+        console.error('🔊 TTS: Audio playback error')
+        setIsSpeaking(false)
+        isProcessingRef.current = false
+        setTimeout(() => processQueueRef.current(), 100)
+      }
+      
+      audioRef.current.src = audioUrl
+      audioRef.current.play().catch(err => {
+        console.error('🔊 TTS: Playback error:', err)
+        URL.revokeObjectURL(audioUrl)
+        setIsSpeaking(false)
+        isProcessingRef.current = false
+        setTimeout(() => processQueueRef.current(), 100)
+      })
+    } catch (error) {
+      console.error('🔊 TTS: Error:', error)
+      setIsSpeaking(false)
+      isProcessingRef.current = false
+      setTimeout(() => processQueueRef.current(), 100)
+    }
+  }, [])
+  
+  // Process speech queue - uses refs to avoid stale closures
+  const processQueue = useCallback(() => {
+    if (!ttsEnabledRef.current) return
+    if (isProcessingRef.current) return
+    
+    const nextItem = speechQueueRef.current.shift()
+    if (nextItem) {
+      isProcessingRef.current = true
+      const currentTargetLang = targetLanguageRef.current
+      speakText(nextItem, currentTargetLang)
+    }
+  }, [speakText])
+  
+  useEffect(() => {
+    processQueueRef.current = processQueue
+  }, [processQueue])
+  
+  // Add text to speech queue
+  const queueSpeech = useCallback((text: string) => {
+    if (!ttsEnabledRef.current) {
+      return
+    }
+    
+    speechQueueRef.current.push(text)
+    
+    // If not currently processing, start processing queue
+    if (!isProcessingRef.current) {
+      processQueue()
+    }
+  }, [processQueue])
+  
+  // Keep queueSpeechRef updated with latest queueSpeech function
+  useEffect(() => {
+    queueSpeechRef.current = queueSpeech
+  }, [queueSpeech])
+  
+  // Toggle TTS on/off
+  const toggleTts = useCallback(() => {
+    if (!ttsAvailable) return
+    
+    setTtsEnabled(prev => {
+      const newValue = !prev
+      if (!newValue) {
+        // Stop any ongoing speech when disabling
+        if (audioRef.current) {
+          audioRef.current.pause()
+          audioRef.current.src = ''
+        }
+        speechQueueRef.current = []
+        isProcessingRef.current = false
+        setIsSpeaking(false)
+      }
+      return newValue
+    })
+  }, [ttsAvailable])
+  
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
@@ -348,10 +509,16 @@ function TranslationApp() {
           ? data.targetLanguage as GoogleCTLanguageCode 
           : targetLanguage,
         timestamp: new Date(),
-        isComplete: true
+        isComplete: true,
+        hasBeenRead: false
       }
       
       setTranslationBubbles(prev => [...prev, newBubble])
+      
+      // Queue TTS for the new translation (using ref to always get latest function)
+      if (data.translatedText && queueSpeechRef.current) {
+        queueSpeechRef.current(data.translatedText)
+      }
     })
     
     socketRef.current.on('translationError', (data) => {
@@ -618,6 +785,26 @@ function TranslationApp() {
           </MobileHeaderLeft>
           
           <MobileHeaderRight>
+            {ttsAvailable && (
+              <Tooltip title={ttsEnabled ? 'Disable read aloud' : 'Enable read aloud'} arrow>
+                <IconButton
+                  onClick={toggleTts}
+                  color={ttsEnabled ? 'primary' : 'default'}
+                  size="small"
+                  sx={{
+                    backgroundColor: ttsEnabled ? 'rgba(155, 181, 209, 0.15)' : 'transparent',
+                    animation: isSpeaking ? 'pulse 1.5s infinite' : 'none',
+                    '@keyframes pulse': {
+                      '0%': { opacity: 1 },
+                      '50%': { opacity: 0.6 },
+                      '100%': { opacity: 1 }
+                    }
+                  }}
+                >
+                  {ttsEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                </IconButton>
+              </Tooltip>
+            )}
             {isConnecting ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <CircularProgress size={16} />
@@ -680,6 +867,47 @@ function TranslationApp() {
               />
             )}
           </ConnectionStatusContainer>
+          
+          {/* Text-to-Speech Toggle Button */}
+          {ttsAvailable && (
+            <Box sx={{ marginBottom: '1rem' }}>
+              <Button
+                variant={ttsEnabled ? 'contained' : 'outlined'}
+                color="primary"
+                onClick={toggleTts}
+                startIcon={ttsEnabled ? <VolumeUpIcon /> : <VolumeOffIcon />}
+                fullWidth
+                sx={{
+                  borderRadius: '2rem',
+                  padding: '0.75rem 1.5rem',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  animation: isSpeaking ? 'pulse 1.5s infinite' : 'none',
+                  '@keyframes pulse': {
+                    '0%': { opacity: 1 },
+                    '50%': { opacity: 0.7 },
+                    '100%': { opacity: 1 }
+                  }
+                }}
+              >
+                {ttsEnabled ? (isSpeaking ? 'Reading...' : 'Read Aloud On') : 'Read Aloud Off'}
+              </Button>
+              <Typography 
+                variant="captionText" 
+                sx={{ 
+                  display: 'block', 
+                  textAlign: 'center', 
+                  marginTop: '0.5rem',
+                  color: 'text.secondary',
+                  fontSize: '0.75rem'
+                }}
+              >
+                {ttsEnabled 
+                  ? 'Translations will be read aloud as they arrive' 
+                  : 'Enable to hear translations spoken'}
+              </Typography>
+            </Box>
+          )}
         </LeftPanel>
       )}
 
