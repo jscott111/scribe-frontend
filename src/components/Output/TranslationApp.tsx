@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import Typography from '../UI/Typography'
 import { Paper, Chip, Button, Box, useMediaQuery, useTheme, CircularProgress, TextField } from '@mui/material'
 import OutputLanguageSelector from '../OutputLanguageSelector'
-import { LanguageCode, getLanguageInfo } from '../../enums/googleLangs'
+import { GoogleCTLanguageCode, getCTLanguageInfo, convertSTTToCTLanguage, isValidCTLanguageCode } from '../../enums/googleCTLangs'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
@@ -191,27 +191,28 @@ interface TranslationBubble {
   id: string
   originalText: string
   translatedText: string
-  sourceLanguage: LanguageCode
-  targetLanguage: LanguageCode
+  sourceLanguage: string // Can be STT or CT language code
+  targetLanguage: GoogleCTLanguageCode
   timestamp: Date
   isComplete: boolean
 }
 
 function TranslationApp() {
   // Initialize target language from cookie or default
-  const getInitialTargetLanguage = (): LanguageCode => {
+  const getInitialTargetLanguage = (): GoogleCTLanguageCode => {
     const savedLanguage = getCookie('scribe-target-language')
-    if (savedLanguage && Object.values(LanguageCode).includes(savedLanguage as LanguageCode)) {
-      return savedLanguage as LanguageCode
+    if (savedLanguage && isValidCTLanguageCode(savedLanguage)) {
+      return savedLanguage as GoogleCTLanguageCode
     }
-    return LanguageCode.FR
+    return GoogleCTLanguageCode.FR
   }
 
-  const [targetLanguage, setTargetLanguage] = useState<LanguageCode>(getInitialTargetLanguage())
+  const [targetLanguage, setTargetLanguage] = useState<GoogleCTLanguageCode>(getInitialTargetLanguage())
+  const [sourceLanguage, setSourceLanguage] = useState<string | undefined>(undefined) // Track source language from speaker
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
 
   // Handle target language change and save to cookie
-  const handleTargetLanguageChange = (language: LanguageCode) => {
+  const handleTargetLanguageChange = (language: GoogleCTLanguageCode) => {
     setTargetLanguage(language)
     setCookie('scribe-target-language', language, {
       maxAge: 365 * 24 * 60 * 60, // 1 year
@@ -333,12 +334,19 @@ function TranslationApp() {
     })
     
     socketRef.current.on('translationComplete', (data) => {
+      // Track source language from the speaker
+      if (data.sourceLanguage) {
+        setSourceLanguage(data.sourceLanguage)
+      }
+      
       const newBubble: TranslationBubble = {
         id: data.bubbleId || Date.now().toString(),
         originalText: data.originalText || 'Unknown',
         translatedText: data.translatedText || 'Translation failed',
-        sourceLanguage: data.sourceLanguage,
-        targetLanguage: data.targetLanguage,
+        sourceLanguage: data.sourceLanguage || 'unknown',
+        targetLanguage: (data.targetLanguage && isValidCTLanguageCode(data.targetLanguage)) 
+          ? data.targetLanguage as GoogleCTLanguageCode 
+          : targetLanguage,
         timestamp: new Date(),
         isComplete: true
       }
@@ -351,13 +359,20 @@ function TranslationApp() {
         id: data.bubbleId || Date.now().toString(),
         originalText: 'Unknown',
         translatedText: 'Translation failed',
-        sourceLanguage: 'en' as LanguageCode,
+        sourceLanguage: data.sourceLanguage || 'unknown',
         targetLanguage: targetLanguage,
         timestamp: new Date(),
         isComplete: true
       }
       
       setTranslationBubbles(prev => [...prev, newBubble])
+    })
+    
+    // Listen for source language updates from the speaker
+    socketRef.current.on('sourceLanguageUpdate', (data: { sourceLanguage: string }) => {
+      if (data.sourceLanguage) {
+        setSourceLanguage(data.sourceLanguage)
+      }
     })
     
     socketRef.current.on('connect_error', (error) => {
@@ -523,8 +538,9 @@ function TranslationApp() {
             
             <OutputLanguageSelector
               label="Language"
-              selectedLanguage={targetLanguage || LanguageCode.EN}
+              selectedLanguage={targetLanguage || GoogleCTLanguageCode.EN_US}
               onLanguageChange={handleTargetLanguageChange}
+              sourceLanguage={sourceLanguage}
             />
             
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px' }}>
@@ -597,7 +613,7 @@ function TranslationApp() {
               Back
             </BackButton>
             <Typography variant="subsectionHeader" sx={{ fontSize: '1rem', fontWeight: '600' }}>
-              {getLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
+              {getCTLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
             </Typography>
           </MobileHeaderLeft>
           
@@ -644,7 +660,7 @@ function TranslationApp() {
               />
             </Box>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
-              Translating to {getLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
+              Translating to {getCTLanguageInfo(targetLanguage).name} {createHybridFlagElement(targetLanguage, 20)}
             </Typography>
           </HeaderSection>
 

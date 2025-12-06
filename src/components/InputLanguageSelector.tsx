@@ -1,12 +1,12 @@
 import React, { useState } from 'react'
-import { LanguageCode, getSpeechToTextLanguages } from '../enums/googleLangs'
+import { GoogleSTTLanguageCode, getAllSTTLanguages } from '../enums/googleSTTLangs'
 import { MenuItem, Select } from '@mui/material'
 import { createHybridFlagElement } from '../utils/flagEmojiUtils.tsx'
 
 interface InputLanguageSelectorProps {
   label: string
-  selectedLanguage: LanguageCode
-  onLanguageChange: (language: LanguageCode) => void
+  selectedLanguage: GoogleSTTLanguageCode
+  onLanguageChange: (language: GoogleSTTLanguageCode) => void
 }
 
 const InputLanguageSelector: React.FC<InputLanguageSelectorProps> = ({
@@ -16,7 +16,7 @@ const InputLanguageSelector: React.FC<InputLanguageSelectorProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false)
 
-  const handleLanguageSelect = (language: LanguageCode) => {
+  const handleLanguageSelect = (language: GoogleSTTLanguageCode) => {
     onLanguageChange(language)
     setIsOpen(false)
   }
@@ -24,7 +24,7 @@ const InputLanguageSelector: React.FC<InputLanguageSelectorProps> = ({
   return (
     <Select
       value={selectedLanguage}
-      onChange={(e) => handleLanguageSelect(e.target.value as LanguageCode)}
+      onChange={(e) => handleLanguageSelect(e.target.value as GoogleSTTLanguageCode)}
       open={isOpen}
       onOpen={() => setIsOpen(true)}
       onClose={() => setIsOpen(false)}
@@ -44,7 +44,7 @@ const InputLanguageSelector: React.FC<InputLanguageSelectorProps> = ({
         }
       }}
     >
-      {getSpeechToTextLanguages().map((language) => (
+      {getAllSTTLanguages().map((language) => (
         <MenuItem key={language.code} value={language.code} sx={{ fontSize: '1rem' }}>
           <span style={{ marginRight: '0.5rem' }}>{createHybridFlagElement(language.code, 18)}</span>
           {language.name}
