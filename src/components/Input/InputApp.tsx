@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
-import { LanguageCode, getLanguageInfo } from '../../enums/googleLangs'
+import { GoogleSTTLanguageCode } from '../../enums/googleSTTLangs'
 import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
 import QrCodeIcon from '@mui/icons-material/QrCode'
 import AccountBoxIcon from '@mui/icons-material/AccountBox';
-import QRCode from 'react-qr-code'
 import { io, Socket } from 'socket.io-client'
 import styled from 'styled-components'
 import { CONFIG } from '../../config/urls'
@@ -156,19 +155,19 @@ const RightPanelContent = styled.div<{ isMobile: boolean }>`
 
 function InputApp() {
   // Initialize source language from cookie or default
-  const getInitialSourceLanguage = (): LanguageCode => {
+  const getInitialSourceLanguage = (): GoogleSTTLanguageCode => {
     const savedLanguage = getCookie('scribe-source-language')
-    if (savedLanguage && Object.values(LanguageCode).includes(savedLanguage as LanguageCode)) {
-      return savedLanguage as LanguageCode
+    if (savedLanguage && Object.values(GoogleSTTLanguageCode).includes(savedLanguage as GoogleSTTLanguageCode)) {
+      return savedLanguage as GoogleSTTLanguageCode
     }
-    return LanguageCode.EN
+    return GoogleSTTLanguageCode.EN_US
   }
 
-  const [sourceLanguage, setSourceLanguage] = useState<LanguageCode>(getInitialSourceLanguage())
+  const [sourceLanguage, setSourceLanguage] = useState<GoogleSTTLanguageCode>(getInitialSourceLanguage())
   const [connectionCount, setConnectionCount] = useState<{total: number, byLanguage: Record<string, number>}>({total: 0, byLanguage: {}})
 
   // Handle source language change and save to cookie
-  const handleSourceLanguageChange = (language: LanguageCode) => {
+  const handleSourceLanguageChange = (language: GoogleSTTLanguageCode) => {
     setSourceLanguage(language)
     setCookie('scribe-source-language', language, {
       maxAge: 365 * 24 * 60 * 60, // 1 year
@@ -735,7 +734,7 @@ function InputApp() {
                       color="primary"
                       label={
                         <span>
-                          {createHybridFlagElement(lang as LanguageCode, 16)} {count}
+                          {createHybridFlagElement(lang as GoogleSTTLanguageCode, 16)} {count}
                         </span>
                       }
                       size="small"
