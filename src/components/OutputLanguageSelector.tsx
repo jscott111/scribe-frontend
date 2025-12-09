@@ -14,7 +14,7 @@ const OutputLanguageSelector: React.FC<OutputLanguageSelectorProps> = ({
   label,
   selectedLanguage,
   onLanguageChange,
-  sourceLanguage
+  sourceLanguage: _sourceLanguage // Unused - we show all languages
 }) => {
   const [isOpen, setIsOpen] = useState(false)
 
@@ -23,10 +23,7 @@ const OutputLanguageSelector: React.FC<OutputLanguageSelectorProps> = ({
     setIsOpen(false)
   }
 
-  // Get available target languages, filtering out the source language if provided
-  const availableLanguages = sourceLanguage 
-    ? getAvailableTargetLanguages(sourceLanguage)
-    : getAvailableTargetLanguages()
+  const availableLanguages = getAvailableTargetLanguages()
 
   return (
     <Select
