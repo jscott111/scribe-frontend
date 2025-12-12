@@ -225,6 +225,7 @@ function InputApp() {
     maxWordsPerBubble: 15,
     speechStartTimeout: 5.0
   })
+  const [isServiceReady, setIsServiceReady] = useState(false)
   const socketRef = React.useRef<Socket | null>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
@@ -413,9 +414,16 @@ function InputApp() {
   // Initialize Google Cloud Speech-to-Text service when socket is connected
   useEffect(() => {
     if (isSocketConnected && socketRef.current) {
-      googleSpeechService.initialize(socketRef.current).catch(error => {
-        console.error('❌ Failed to initialize Google Speech Service:', error)
-      })
+      googleSpeechService.initialize(socketRef.current)
+        .then(() => {
+          setIsServiceReady(googleSpeechService.isReady())
+        })
+        .catch(error => {
+          console.error('❌ Failed to initialize Google Speech Service:', error)
+          setIsServiceReady(false)
+        })
+    } else {
+      setIsServiceReady(false)
     }
   }, [isSocketConnected])
 
@@ -761,6 +769,7 @@ function InputApp() {
           <Button
             variant="contained"
             color="primary"
+            disabled={!isServiceReady}
             sx={{
               borderRadius: '2rem',
               marginTop: '2rem',
@@ -775,7 +784,7 @@ function InputApp() {
               }
             }}
           >
-            {isTranslating ? 'Translating...' : 'Translate'}
+            {!isServiceReady ? 'Initializing...' : isTranslating ? 'Translating...' : 'Translate'}
           </Button>
           <QRCodeSection>
             <Typography variant="subsectionHeader" sx={{ textAlign: 'center' }}>
@@ -862,6 +871,7 @@ function InputApp() {
                 variant="contained"
                 color="primary"
                 fullWidth
+                disabled={!isServiceReady}
                 sx={{
                   borderRadius: '2rem',
                   marginTop: '1rem',
@@ -877,7 +887,7 @@ function InputApp() {
                   }
                 }}
               >
-                {isTranslating ? 'Translating...' : 'Translate'}
+                {!isServiceReady ? 'Initializing...' : isTranslating ? 'Translating...' : 'Translate'}
               </Button>
             </Box>
           )}
