@@ -224,6 +224,8 @@ function TranslationApp() {
   const ttsEnabledRef = useRef(false) // Ref to track ttsEnabled for callbacks
   const targetLanguageRef = useRef(targetLanguage) // Ref for target language
   const queueSpeechRef = useRef<((text: string) => void) | null>(null) // Ref for queueSpeech function
+  const showLanguageSelectionRef = useRef(true) // Ref to track if user has joined (for socket handlers)
+  const processedTranslationsRef = useRef<Set<string>>(new Set()) // Track processed translations for deduplication
 
   // Handle target language change and save to cookie
   const handleTargetLanguageChange = (language: GoogleCTLanguageCode) => {
@@ -384,6 +386,11 @@ function TranslationApp() {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [showLanguageSelection, setShowLanguageSelection] = useState(true)
+  
+  // Keep ref in sync with state for socket handlers
+  useEffect(() => {
+    showLanguageSelectionRef.current = showLanguageSelection
+  }, [showLanguageSelection])
   const [userCodeInput, setUserCodeInput] = useState('')
   const [isValidatingUserCode, setIsValidatingUserCode] = useState(false)
   const [userCodeValidationError, setUserCodeValidationError] = useState('')
@@ -471,10 +478,11 @@ function TranslationApp() {
       setIsConnecting(false)
       setIsConnected(true)
       
-      // Re-establish target language immediately after connection
-      // Use ref to avoid stale closure issues
+      // Only re-establish target language if user has already joined (not on landing page)
+      // Use refs to avoid stale closure issues
       const currentTargetLanguage = targetLanguageRef.current
-      if (currentTargetLanguage) {
+      const isOnLandingPage = showLanguageSelectionRef.current
+      if (currentTargetLanguage && !isOnLandingPage) {
         console.log(`🔗 Re-establishing target language: ${currentTargetLanguage}`)
         socketRef.current?.emit('setTargetLanguage', { targetLanguage: currentTargetLanguage })
       }
@@ -514,10 +522,32 @@ function TranslationApp() {
         setSourceLanguage(data.sourceLanguage)
       }
       
+      const bubbleId = data.bubbleId || Date.now().toString()
+      const translatedText = data.translatedText || 'Translation failed'
+      const originalText = data.originalText || 'Unknown'
+      
+      // Create a unique key combining bubbleId AND text for true duplicate detection
+      // Only skip if we've seen this EXACT combination before
+      const dedupeKey = `${bubbleId}:${originalText.trim()}`
+      
+      if (processedTranslationsRef.current.has(dedupeKey)) {
+        console.log('⚠️ Skipping true duplicate:', dedupeKey.substring(0, 60))
+        return
+      }
+      
+      // Mark as processed
+      processedTranslationsRef.current.add(dedupeKey)
+      
+      // Limit the size to prevent memory bloat (keep last 200 entries)
+      if (processedTranslationsRef.current.size > 200) {
+        const iterator = processedTranslationsRef.current.values()
+        processedTranslationsRef.current.delete(iterator.next().value)
+      }
+      
       const newBubble: TranslationBubble = {
-        id: data.bubbleId || Date.now().toString(),
-        originalText: data.originalText || 'Unknown',
-        translatedText: data.translatedText || 'Translation failed',
+        id: `${bubbleId}-${Date.now()}`, // Make ID unique to prevent React key issues
+        originalText: originalText,
+        translatedText: translatedText,
         sourceLanguage: data.sourceLanguage || 'unknown',
         targetLanguage: (data.targetLanguage && isValidCTLanguageCode(data.targetLanguage)) 
           ? data.targetLanguage as GoogleCTLanguageCode 
@@ -529,7 +559,7 @@ function TranslationApp() {
       
       setTranslationBubbles(prev => [...prev, newBubble])
       
-      // Queue TTS for the new translation (using ref to always get latest function)
+      // Queue TTS for new translation
       if (data.translatedText && queueSpeechRef.current) {
         queueSpeechRef.current(data.translatedText)
       }
@@ -567,10 +597,11 @@ function TranslationApp() {
       setIsConnecting(false)
       setIsConnected(true)
       
-      // Re-establish target language after reconnection
-      // Use ref to avoid stale closure issues
+      // Only re-establish target language if user has already joined (not on landing page)
+      // Use refs to avoid stale closure issues
       const currentTargetLanguage = targetLanguageRef.current
-      if (currentTargetLanguage) {
+      const isOnLandingPage = showLanguageSelectionRef.current
+      if (currentTargetLanguage && !isOnLandingPage) {
         console.log(`🔗 Re-establishing target language after reconnect: ${currentTargetLanguage}`)
         socketRef.current?.emit('setTargetLanguage', { targetLanguage: currentTargetLanguage })
       }
@@ -616,8 +647,12 @@ function TranslationApp() {
     // Reset to saved language or default
     setTargetLanguage(getInitialTargetLanguage())
     setTranslationBubbles([])
-    if (socketRef.current) {
-      socketRef.current.disconnect()
+    // Clear deduplication set
+    processedTranslationsRef.current.clear()
+    // Clear target language on server (removes this client from listener list)
+    // but keep socket connected so user can rejoin easily
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('clearTargetLanguage')
     }
   }
 
