@@ -3,7 +3,7 @@ import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
 import { GoogleSTTLanguageCode } from '../../enums/googleSTTLangs'
-import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip } from '@mui/material'
+import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip, Snackbar, Alert } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
 import LogoutIcon from '@mui/icons-material/Logout'
@@ -127,7 +127,7 @@ const QRCodeContainer = styled.div`
 
 const MessageBubble = styled(Paper)`
   padding: 0.75rem 1rem;
-  border-radius: 4rem!important;
+  border-radius: 2rem!important;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
@@ -226,13 +226,25 @@ function InputApp() {
     speechStartTimeout: 5.0
   })
   const [isServiceReady, setIsServiceReady] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const socketRef = React.useRef<Socket | null>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
+  const currentTranscriptionRef = React.useRef<string>('') // Ref to track current transcription for stream restart handler
+  const sourceLanguageRef = React.useRef<string>('en-CA') // Ref to track source language for stream restart handler
   const { user, tokens, logout, updateTokens, getConnectionInfo } = useAuth()
   const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
   const isMobile = useMediaQuery('(max-width: 850px)')
+
+  // Keep refs in sync with state for use in socket handlers (avoid stale closures)
+  useEffect(() => {
+    currentTranscriptionRef.current = currentTranscription
+  }, [currentTranscription])
+
+  useEffect(() => {
+    sourceLanguageRef.current = sourceLanguage
+  }, [sourceLanguage])
 
   useEffect(() => {
     if (tokens && user && user.userCode) {
@@ -289,7 +301,7 @@ function InputApp() {
         userCode: userCode
       },
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       timeout: 20000
     })
@@ -310,30 +322,34 @@ function InputApp() {
       
       ;(socketRef.current as any).connectionCountInterval = intervalId
       
-      // Set up heartbeat mechanism
+      // Set up heartbeat mechanism - more frequent for better connection detection
       const heartbeatInterval = setInterval(() => {
         if (socketRef.current?.connected) {
           socketRef.current.emit('ping')
         } else {
           clearInterval(heartbeatInterval)
         }
-      }, 15000) // Send ping every 15 seconds
+      }, 10000) // Send ping every 10 seconds (more frequent for reliability)
       
       ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
-
-    socketRef.current.on('interimTranscription', (data) => {
-      setCurrentTranscription(data.transcript)
-    })
-
 
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
       setConnectionCount(data)
     })
 
     socketRef.current.on('disconnect', (reason) => {
+      console.log(`🔌 Socket disconnected: ${reason}`)
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
+      
+      // Clear intervals
+      if ((socketRef.current as any)?.connectionCountInterval) {
+        clearInterval((socketRef.current as any).connectionCountInterval)
+      }
+      if ((socketRef.current as any)?.heartbeatInterval) {
+        clearInterval((socketRef.current as any).heartbeatInterval)
+      }
     })
 
     socketRef.current.on('connect_error', (error) => {
@@ -342,10 +358,18 @@ function InputApp() {
       setIsSocketConnected(false)
     })
 
-    socketRef.current.on('reconnect', (attemptNumber) => {
+    socketRef.current.on('reconnect', async (attemptNumber) => {
       console.log(`🔄 Reconnected after ${attemptNumber} attempts`)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
+      
+      // Re-initialize Google Speech Service with the reconnected socket
+      try {
+        await googleSpeechService.initialize(socketRef.current)
+        console.log('✅ Google Speech Service re-initialized after reconnect')
+      } catch (error) {
+        console.error('❌ Failed to re-initialize Google Speech Service:', error)
+      }
     })
 
     socketRef.current.on('reconnect_error', (error) => {
@@ -392,6 +416,46 @@ function InputApp() {
 
     socketRef.current.on('pong', () => {
       console.log('💓 Received pong from server')
+    })
+
+    // Listen for stream restart events to save displayed interim text
+    // This ensures no speech is lost when Google Cloud STT stream restarts
+    socketRef.current.on('streamRestart', (data: { reason: string }) => {
+      console.log('🔄 InputApp: Stream restart event received, reason:', data.reason)
+      const displayedText = currentTranscriptionRef.current
+      if (displayedText && displayedText.trim()) {
+        console.log('💾 InputApp: Saving displayed interim text before stream restart:', displayedText)
+        // Save the displayed text as a final bubble
+        const uniqueId = `stream-restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const newBubble: MessageBubble = {
+          id: uniqueId,
+          text: displayedText,
+          timestamp: new Date(),
+          isComplete: false
+        }
+        setTranscriptionBubbles(prev => [...prev, newBubble])
+        
+        // Send to backend for translation using ref to get current value
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('speechTranscription', {
+            transcription: displayedText,
+            sourceLanguage: sourceLanguageRef.current,
+            bubbleId: uniqueId
+          })
+        }
+        
+        // Clear the interim display
+        setCurrentTranscription('')
+        
+        // Mark as complete after delay
+        setTimeout(() => {
+          setTranscriptionBubbles(prev =>
+            prev.map(bubble =>
+              bubble.id === uniqueId ? { ...bubble, isComplete: true } : bubble
+            )
+          )
+        }, 250)
+      }
     })
 
     return () => {
@@ -444,6 +508,69 @@ function InputApp() {
     }
   }, [])
 
+  // Google Cloud Speech-to-Text recognition
+  const startGoogleSpeechRecognitionInternal = useCallback(async () => {
+    // Update Google Speech Service configuration
+    googleSpeechService.updateConfig({
+      languageCode: sourceLanguage,
+      speechStartTimeout: speechConfig.speechStartTimeout,
+      maxWordsPerBubble: speechConfig.maxWordsPerBubble
+    })
+
+    await googleSpeechService.startRecognition({
+      onStart: () => {
+        setIsTranslating(true)
+        setErrorMessage(null)
+      },
+      onEnd: () => {
+        setIsTranslating(false)
+        setAudioLevel(0) // Reset audio level when recording ends
+      },
+      onInterimResult: (result) => {
+        setCurrentTranscription(result.transcript)
+      },
+      onFinalResult: (result) => {
+        // Don't create empty bubbles
+        if (!result.transcript || !result.transcript.trim()) {
+          console.log('⚠️ Ignoring empty final result')
+          setCurrentTranscription('')
+          return
+        }
+        
+        const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const newBubble: MessageBubble = {
+          id: uniqueId,
+          text: result.transcript,
+          timestamp: new Date(),
+          isComplete: false
+        }
+        
+        setTranscriptionBubbles(prev => [...prev, newBubble])
+        setCurrentTranscription('')
+        
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current)
+        }
+        timeoutRef.current = setTimeout(() => {
+          setTranscriptionBubbles((prev) =>
+            prev.map((bubble) =>
+              bubble.id === uniqueId
+                ? { ...bubble, isComplete: true }
+                : bubble
+            )
+          )
+        }, 250)
+      },
+      onError: (error) => {
+        console.error('❌ Google Speech recognition error:', error)
+        setIsTranslating(false)
+      },
+      onAudioLevel: (level) => {
+        setAudioLevel(level)
+      }
+    })
+  }, [sourceLanguage, speechConfig])
+
   // Google Cloud Speech-to-Text handlers
   const startGoogleSpeechRecognition = useCallback(async () => {
     console.log('🎤 startGoogleSpeechRecognition called, shouldBeListening:', shouldBeListening);
@@ -451,70 +578,36 @@ function InputApp() {
     try {
       // Check if Google Speech Service is ready
       if (!googleSpeechService.isReady()) {
-        console.error('❌ Google Speech Service not ready');
-        alert('Google Cloud Speech-to-Text is not configured. Please check the setup guide and configure your API credentials.');
-        setIsTranslating(false)
-        return
+        console.error('❌ Google Speech Service not ready, attempting to initialize...');
+        
+        // Try to initialize if socket is connected
+        if (isSocketConnected && socketRef.current) {
+          try {
+            await googleSpeechService.initialize(socketRef.current)
+            console.log('✅ Google Speech Service initialized successfully')
+          } catch (initError) {
+            console.error('❌ Failed to initialize Google Speech Service:', initError)
+            setErrorMessage('Initializing speech recognition...')
+            setTimeout(() => setErrorMessage(null), 5000)
+            return
+          }
+        } else {
+          console.log('⏳ Socket not connected, waiting for connection...')
+          setErrorMessage('Connecting to server...')
+          setTimeout(() => setErrorMessage(null), 5000)
+          return
+        }
       }
 
-      // Update Google Speech Service configuration
-      googleSpeechService.updateConfig({
-        languageCode: sourceLanguage,
-        speechStartTimeout: speechConfig.speechStartTimeout,
-        maxWordsPerBubble: speechConfig.maxWordsPerBubble
-      })
-
-      await googleSpeechService.startRecognition({
-        onStart: () => {
-          setIsTranslating(true)
-        },
-        onEnd: () => {
-          setIsTranslating(false)
-          setAudioLevel(0) // Reset audio level when recording ends
-        },
-        onInterimResult: (result) => {
-          setCurrentTranscription(result.transcript)
-        },
-        onFinalResult: (result) => {
-          const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          const newBubble: MessageBubble = {
-            id: uniqueId,
-            text: result.transcript,
-            timestamp: new Date(),
-            isComplete: false
-          }
-          
-          setTranscriptionBubbles(prev => [...prev, newBubble])
-          setCurrentTranscription('')
-          
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current)
-          }
-          timeoutRef.current = setTimeout(() => {
-            setTranscriptionBubbles((prev) =>
-              prev.map((bubble) =>
-                bubble.id === uniqueId
-                  ? { ...bubble, isComplete: true }
-                  : bubble
-              )
-            )
-          }, 250)
-        },
-        onError: (error) => {
-          console.error('❌ Google Speech recognition error:', error)
-          alert('Speech recognition error: ' + error.message);
-          setIsTranslating(false)
-        },
-        onAudioLevel: (level) => {
-          setAudioLevel(level)
-        }
-      })
-    } catch (error) {
+      setErrorMessage(null)
+      await startGoogleSpeechRecognitionInternal()
+    } catch (error: any) {
       console.error('❌ Failed to start Google Speech recognition:', error)
-      alert('Failed to start speech recognition: ' + error.message);
+      setErrorMessage('Failed to start speech recognition')
+      setTimeout(() => setErrorMessage(null), 5000)
       setIsTranslating(false)
     }
-  }, [sourceLanguage, speechConfig])
+  }, [sourceLanguage, speechConfig, isSocketConnected, startGoogleSpeechRecognitionInternal, shouldBeListening])
 
   const stopGoogleSpeechRecognition = useCallback(() => {
     // If there's current interim transcription, submit it as final
@@ -988,7 +1081,6 @@ function InputApp() {
         </DialogActions>
       </Dialog>
       
-      {/* Profile Modal */}
       <ProfileModal
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
@@ -996,6 +1088,22 @@ function InputApp() {
         isSocketConnected={isSocketConnected}
         onLogout={logout}
       />
+      
+      <Snackbar
+        open={!!errorMessage}
+        autoHideDuration={5000}
+        onClose={() => setErrorMessage(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ bottom: { xs: 90, sm: 24 } }}
+      >
+        <Alert 
+          severity="warning" 
+          variant="filled"
+          sx={{ borderRadius: '1rem' }}
+        >
+          {errorMessage}
+        </Alert>
+      </Snackbar>
     </MainContainer>
   )
 }
