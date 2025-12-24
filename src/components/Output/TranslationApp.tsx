@@ -462,41 +462,43 @@ function TranslationApp() {
         userCode: userCode
       },
       reconnection: true,
-      reconnectionAttempts: Infinity, // Keep trying to reconnect indefinitely
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 10000, // Max delay of 10 seconds between attempts
-      randomizationFactor: 0.5, // Add randomness to prevent thundering herd
       timeout: 20000
     })
     
     socketRef.current.on('connect', () => {
+      console.log('🔗 TranslationApp connected to server')
       setIsConnecting(false)
       setIsConnected(true)
       
-      // Set up heartbeat mechanism
+      // Re-establish target language immediately after connection
+      if (targetLanguage && !showLanguageSelection) {
+        console.log(`🔗 Re-establishing target language: ${targetLanguage}`)
+        socketRef.current?.emit('setTargetLanguage', { targetLanguage })
+      }
+      
+      // Set up heartbeat to keep connection alive
       const heartbeatInterval = setInterval(() => {
         if (socketRef.current?.connected) {
           socketRef.current.emit('ping')
         } else {
           clearInterval(heartbeatInterval)
         }
-      }, 15000) // Send ping every 15 seconds
+      }, 25000) // Send ping every 25 seconds (server timeout is 60s)
       
       ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
     
     socketRef.current.on('disconnect', (reason) => {
+      console.log(`🔌 TranslationApp disconnected: ${reason}`)
       setIsConnecting(false)
       setIsConnected(false)
       
-      // Clear heartbeat interval on disconnect
-      if ((socketRef.current as any).heartbeatInterval) {
+      // Clear heartbeat interval
+      if ((socketRef.current as any)?.heartbeatInterval) {
         clearInterval((socketRef.current as any).heartbeatInterval)
-        ;(socketRef.current as any).heartbeatInterval = null
       }
-      
-      // If disconnected due to server-side issues, Socket.IO will automatically attempt reconnection
-      // The reconnection logic is configured in the io() options above
     })
     
     socketRef.current.on('connect_error', (error) => {
@@ -563,26 +565,6 @@ function TranslationApp() {
       console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
       setIsConnecting(false)
       setIsConnected(true)
-      
-      // Re-establish target language after reconnection
-      if (targetLanguage && socketRef.current?.connected) {
-        console.log(`🔄 Re-establishing target language: ${targetLanguage}`)
-        socketRef.current.emit('setTargetLanguage', { targetLanguage })
-      }
-      
-      // Restart heartbeat after reconnection
-      const heartbeatInterval = setInterval(() => {
-        if (socketRef.current?.connected) {
-          socketRef.current.emit('ping')
-        } else {
-          clearInterval(heartbeatInterval)
-        }
-      }, 15000) // Send ping every 15 seconds
-      
-      if ((socketRef.current as any).heartbeatInterval) {
-        clearInterval((socketRef.current as any).heartbeatInterval)
-      }
-      ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
 
     socketRef.current.on('reconnect_error', (error) => {
@@ -593,22 +575,7 @@ function TranslationApp() {
 
     socketRef.current.on('reconnect_failed', () => {
       console.error('❌ TranslationApp reconnection failed after all attempts')
-      // With Infinity attempts, this shouldn't happen, but handle it gracefully
-      setIsConnecting(true) // Keep trying to show we're attempting to reconnect
-      setIsConnected(false)
-      
-      // Attempt manual reconnection after a delay
-      setTimeout(() => {
-        if (socketRef.current && !socketRef.current.connected && userCode && targetLanguage) {
-          console.log('🔄 Attempting manual reconnection...')
-          socketRef.current.connect()
-        }
-      }, 5000)
-    })
-    
-    socketRef.current.on('reconnect_attempt', (attemptNumber) => {
-      console.log(`🔄 TranslationApp reconnection attempt ${attemptNumber}`)
-      setIsConnecting(true)
+      setIsConnecting(false)
       setIsConnected(false)
     })
 
@@ -626,7 +593,7 @@ function TranslationApp() {
       setIsConnecting(false)
       setIsConnected(false)
     }
-  }, [targetLanguage, userCode])
+  }, [targetLanguage, userCode]) // Removed showLanguageSelection - we don't need to reconnect when it changes
 
   useEffect(() => {
     if (socketRef.current && isConnected && targetLanguage && !showLanguageSelection) {

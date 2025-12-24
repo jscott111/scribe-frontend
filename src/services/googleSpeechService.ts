@@ -129,6 +129,15 @@ class GoogleSpeechService {
         }
       });
       
+      // Handle socket reconnection - process any queued messages
+      this.socket.on('connect', () => {
+        console.log('🔗 GoogleSpeechService: Socket reconnected');
+        // Process queued messages immediately after reconnection
+        setTimeout(() => {
+          this.processMessageQueue();
+        }, 100);
+      });
+      
       // Request microphone access with simpler constraints
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -477,9 +486,21 @@ class GoogleSpeechService {
    * Send message with retry logic
    */
   private sendWithRetry(event: string, data: any): void {
-    if (!this.socket || !this.socket.connected) {
-      console.log('📦 Socket not connected, queuing message');
+    if (!this.socket) {
+      console.log('📦 No socket available, queuing message');
       this.queueMessage(event, data);
+      return;
+    }
+    
+    if (!this.socket.connected) {
+      console.log('📦 Socket not connected, queuing message and attempting reconnection');
+      this.queueMessage(event, data);
+      // Try to reconnect the socket
+      try {
+        this.socket.connect();
+      } catch (e) {
+        console.log('⚠️ Could not trigger socket reconnection:', e);
+      }
       return;
     }
 
