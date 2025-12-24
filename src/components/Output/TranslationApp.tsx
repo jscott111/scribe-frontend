@@ -130,7 +130,7 @@ const RightPanel = styled(Paper)<{ isMobile: boolean }>`
 
 const MessageBubble = styled(Paper)`
   padding: 0.75rem 1rem;
-  border-radius: 4rem !important;
+  border-radius: 2rem !important;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
@@ -468,14 +468,15 @@ function TranslationApp() {
     })
     
     socketRef.current.on('connect', () => {
-      console.log('🔗 TranslationApp connected to server')
       setIsConnecting(false)
       setIsConnected(true)
       
       // Re-establish target language immediately after connection
-      if (targetLanguage && !showLanguageSelection) {
-        console.log(`🔗 Re-establishing target language: ${targetLanguage}`)
-        socketRef.current?.emit('setTargetLanguage', { targetLanguage })
+      // Use ref to avoid stale closure issues
+      const currentTargetLanguage = targetLanguageRef.current
+      if (currentTargetLanguage) {
+        console.log(`🔗 Re-establishing target language: ${currentTargetLanguage}`)
+        socketRef.current?.emit('setTargetLanguage', { targetLanguage: currentTargetLanguage })
       }
       
       // Set up heartbeat to keep connection alive
@@ -565,6 +566,14 @@ function TranslationApp() {
       console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
       setIsConnecting(false)
       setIsConnected(true)
+      
+      // Re-establish target language after reconnection
+      // Use ref to avoid stale closure issues
+      const currentTargetLanguage = targetLanguageRef.current
+      if (currentTargetLanguage) {
+        console.log(`🔗 Re-establishing target language after reconnect: ${currentTargetLanguage}`)
+        socketRef.current?.emit('setTargetLanguage', { targetLanguage: currentTargetLanguage })
+      }
     })
 
     socketRef.current.on('reconnect_error', (error) => {

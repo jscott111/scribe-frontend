@@ -34,14 +34,18 @@ class GoogleSpeechService {
   private isRecording = false;
   private isPaused = false;
   private currentBubbleId: string | null = null;
+  private previousBubbleId: string | null = null; // Track previous bubble to handle late results
   private currentWordCount = 0;
   private currentTranscript = '';
   private config: SpeechRecognitionConfig;
   private callbacks: SpeechRecognitionCallbacks | null = null;
   private wordCountTimer: NodeJS.Timeout | null = null;
   private socket: any = null; // Socket.IO connection
+  private lastSocketId: string | null = null; // Track socket ID to detect reconnections
   private hasReceivedFinalResult = false; // Track if we've received a final result from Google Cloud
   private audioLevelInterval: NodeJS.Timeout | null = null; // For audio level monitoring
+  private keepAliveInterval: NodeJS.Timeout | null = null; // Keep-alive for audio stream
+  private lastAudioSentTime: number = 0; // Track when last audio was sent
   private messageQueue: Array<{data: any, timestamp: number, retries: number}> = []; // Message queue for failed transmissions
   private maxRetries = 3; // Maximum number of retry attempts
   private queueProcessingInterval: NodeJS.Timeout | null = null; // Interval for processing queued messages
@@ -62,10 +66,26 @@ class GoogleSpeechService {
    */
   async initialize(socket: any): Promise<void> {
     try {
-      // If already initialized with the same socket, don't reinitialize
-      if (this.socket === socket) {
+      // Check if socket connection has changed (even if same reference, ID may be different after reconnect)
+      const currentSocketId = socket?.id;
+      const socketChanged = this.lastSocketId !== currentSocketId;
+      
+      if (this.socket === socket && !socketChanged) {
         console.log('🔄 Google Speech Service already initialized with this socket, skipping...');
         return;
+      }
+      
+      if (socketChanged) {
+        console.log(`🔄 Socket reconnected (${this.lastSocketId} -> ${currentSocketId}), reinitializing...`);
+        // Reset recording state on reconnection so startRecognition can run again
+        this.isRecording = false;
+        this.isPaused = false;
+        this.stopKeepAlive();
+        this.stopAudioLevelMonitoring();
+        if (this.scriptProcessor) {
+          this.scriptProcessor.disconnect();
+          this.scriptProcessor = null;
+        }
       }
       
       // Clean up existing socket listeners before setting up new ones
@@ -73,14 +93,20 @@ class GoogleSpeechService {
         this.socket.removeAllListeners('transcriptionUpdate');
         this.socket.removeAllListeners('finalResultReceived');
         this.socket.removeAllListeners('streamRestarted');
+        this.socket.removeAllListeners('streamRestart');
       }
       
       this.socket = socket;
+      this.lastSocketId = currentSocketId;
       
       // Listen for transcription updates from backend
       this.socket.on('transcriptionUpdate', (data: any) => {
-        // Only process results for the current bubble
-        if (data.bubbleId !== this.currentBubbleId) {
+        // Accept results from current or previous bubble (for late results after stream restart)
+        const isCurrentBubble = data.bubbleId === this.currentBubbleId;
+        const isPreviousBubble = data.bubbleId === this.previousBubbleId;
+        
+        if (!isCurrentBubble && !isPreviousBubble) {
+          console.log(`⚠️ Ignoring result for unknown bubble: ${data.bubbleId}`);
           return;
         }
         
@@ -93,7 +119,18 @@ class GoogleSpeechService {
             wordCount: this.currentWordCount,
             bubbleId: data.bubbleId
           });
+          // Clear current transcript since we've received a final result
+          if (isCurrentBubble) {
+            this.currentTranscript = '';
+            this.hasReceivedFinalResult = true;
+          }
+          // Clear previous bubble ID after receiving its final result
+          if (isPreviousBubble) {
+            this.previousBubbleId = null;
+          }
         } else if (!data.isFinal && this.callbacks?.onInterimResult) {
+          // Track the current transcript so we can save it on stream restart
+          this.currentTranscript = data.transcript;
           this.callbacks.onInterimResult({
             transcript: data.transcript,
             isFinal: data.isFinal,
@@ -119,11 +156,19 @@ class GoogleSpeechService {
       });
       
       // Listen for stream restart requests from backend
+      // Note: InputApp.tsx handles saving displayed interim text on stream restart
+      // This handler only manages internal state for the new stream
       this.socket.on('streamRestart', (data: any) => {
         console.log('🔄 Backend requested stream restart:', data.reason);
         if (this.isRecording) {
+          // Note: We no longer save interim here - InputApp handles this to avoid duplicates
+          // and ensure the displayed text (which may differ from internal state) is preserved
+          
+          // Save current bubble ID as previous to allow late results to come through
+          this.previousBubbleId = this.currentBubbleId;
           // Generate new bubble ID and continue recording
           this.currentBubbleId = this.generateBubbleId();
+          this.currentTranscript = ''; // Reset for new bubble
           this.hasReceivedFinalResult = false;
           console.log('🔄 Stream restarted with new bubble ID:', this.currentBubbleId);
         }
@@ -176,6 +221,7 @@ class GoogleSpeechService {
     this.callbacks = callbacks;
     this.isRecording = true;
     this.isPaused = false;
+    this.previousBubbleId = null; // Clear any previous bubble ID when starting fresh
     this.currentBubbleId = this.generateBubbleId();
     this.currentWordCount = 0;
     this.currentTranscript = '';
@@ -208,6 +254,10 @@ class GoogleSpeechService {
 
       // Start audio level monitoring
       this.startAudioLevelMonitoring();
+      
+      // Start keep-alive mechanism to prevent audio timeout
+      this.startKeepAlive();
+      this.lastAudioSentTime = Date.now();
 
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
@@ -231,6 +281,9 @@ class GoogleSpeechService {
 
     // Stop audio level monitoring
     this.stopAudioLevelMonitoring();
+    
+    // Stop keep-alive mechanism
+    this.stopKeepAlive();
 
     // Disconnect script processor
     if (this.scriptProcessor) {
@@ -288,7 +341,7 @@ class GoogleSpeechService {
    * Check if service is initialized with a specific socket
    */
   isInitializedWithSocket(socket: any): boolean {
-    return this.socket === socket;
+    return this.socket === socket && this.lastSocketId === socket?.id;
   }
 
   /**
@@ -300,6 +353,7 @@ class GoogleSpeechService {
     this.stopRecognition();
     this.clearTimers();
     this.clearMessageQueue();
+    this.stopKeepAlive();
 
     // Notify backend to stop streaming
     if (this.socket) {
@@ -342,7 +396,41 @@ class GoogleSpeechService {
   private processRawAudioChunk(int16Data: Int16Array): void {
     // Send raw LINEAR16 data immediately
     if (int16Data.length > 0) {
+      this.lastAudioSentTime = Date.now();
       this.sendRawAudioChunk(int16Data);
+    }
+  }
+
+  /**
+   * Start keep-alive mechanism to prevent audio timeout
+   */
+  private startKeepAlive(): void {
+    // Send keep-alive every 5 seconds if no audio has been sent
+    this.keepAliveInterval = setInterval(() => {
+      if (!this.isRecording || this.isPaused) {
+        return;
+      }
+      
+      const timeSinceLastAudio = Date.now() - this.lastAudioSentTime;
+      
+      // If no audio sent in 5 seconds, send a silent audio frame
+      if (timeSinceLastAudio > 5000) {
+        console.log('🔇 Sending keep-alive silent audio frame');
+        // Create a small silent audio buffer (256 samples of silence)
+        const silentAudio = new Int16Array(256);
+        this.sendRawAudioChunk(silentAudio);
+        this.lastAudioSentTime = Date.now();
+      }
+    }, 2000); // Check every 2 seconds
+  }
+
+  /**
+   * Stop keep-alive mechanism
+   */
+  private stopKeepAlive(): void {
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
     }
   }
 

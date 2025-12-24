@@ -127,7 +127,7 @@ const QRCodeContainer = styled.div`
 
 const MessageBubble = styled(Paper)`
   padding: 0.75rem 1rem;
-  border-radius: 4rem!important;
+  border-radius: 2rem!important;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
@@ -230,10 +230,21 @@ function InputApp() {
   const socketRef = React.useRef<Socket | null>(null)
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const qrCodeRef = useRef<HTMLDivElement>(null)
+  const currentTranscriptionRef = React.useRef<string>('') // Ref to track current transcription for stream restart handler
+  const sourceLanguageRef = React.useRef<string>('en-CA') // Ref to track source language for stream restart handler
   const { user, tokens, logout, updateTokens, getConnectionInfo } = useAuth()
   const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
   const isMobile = useMediaQuery('(max-width: 850px)')
+
+  // Keep refs in sync with state for use in socket handlers (avoid stale closures)
+  useEffect(() => {
+    currentTranscriptionRef.current = currentTranscription
+  }, [currentTranscription])
+
+  useEffect(() => {
+    sourceLanguageRef.current = sourceLanguage
+  }, [sourceLanguage])
 
   useEffect(() => {
     if (tokens && user && user.userCode) {
@@ -323,11 +334,6 @@ function InputApp() {
       ;(socketRef.current as any).heartbeatInterval = heartbeatInterval
     })
 
-    socketRef.current.on('interimTranscription', (data) => {
-      setCurrentTranscription(data.transcript)
-    })
-
-
     socketRef.current.on('connectionCount', (data: {total: number, byLanguage: Record<string, number>}) => {
       setConnectionCount(data)
     })
@@ -352,10 +358,18 @@ function InputApp() {
       setIsSocketConnected(false)
     })
 
-    socketRef.current.on('reconnect', (attemptNumber) => {
+    socketRef.current.on('reconnect', async (attemptNumber) => {
       console.log(`🔄 Reconnected after ${attemptNumber} attempts`)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
+      
+      // Re-initialize Google Speech Service with the reconnected socket
+      try {
+        await googleSpeechService.initialize(socketRef.current)
+        console.log('✅ Google Speech Service re-initialized after reconnect')
+      } catch (error) {
+        console.error('❌ Failed to re-initialize Google Speech Service:', error)
+      }
     })
 
     socketRef.current.on('reconnect_error', (error) => {
@@ -402,6 +416,46 @@ function InputApp() {
 
     socketRef.current.on('pong', () => {
       console.log('💓 Received pong from server')
+    })
+
+    // Listen for stream restart events to save displayed interim text
+    // This ensures no speech is lost when Google Cloud STT stream restarts
+    socketRef.current.on('streamRestart', (data: { reason: string }) => {
+      console.log('🔄 InputApp: Stream restart event received, reason:', data.reason)
+      const displayedText = currentTranscriptionRef.current
+      if (displayedText && displayedText.trim()) {
+        console.log('💾 InputApp: Saving displayed interim text before stream restart:', displayedText)
+        // Save the displayed text as a final bubble
+        const uniqueId = `stream-restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const newBubble: MessageBubble = {
+          id: uniqueId,
+          text: displayedText,
+          timestamp: new Date(),
+          isComplete: false
+        }
+        setTranscriptionBubbles(prev => [...prev, newBubble])
+        
+        // Send to backend for translation using ref to get current value
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('speechTranscription', {
+            transcription: displayedText,
+            sourceLanguage: sourceLanguageRef.current,
+            bubbleId: uniqueId
+          })
+        }
+        
+        // Clear the interim display
+        setCurrentTranscription('')
+        
+        // Mark as complete after delay
+        setTimeout(() => {
+          setTranscriptionBubbles(prev =>
+            prev.map(bubble =>
+              bubble.id === uniqueId ? { ...bubble, isComplete: true } : bubble
+            )
+          )
+        }, 250)
+      }
     })
 
     return () => {
@@ -476,6 +530,13 @@ function InputApp() {
         setCurrentTranscription(result.transcript)
       },
       onFinalResult: (result) => {
+        // Don't create empty bubbles
+        if (!result.transcript || !result.transcript.trim()) {
+          console.log('⚠️ Ignoring empty final result')
+          setCurrentTranscription('')
+          return
+        }
+        
         const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
         const newBubble: MessageBubble = {
           id: uniqueId,
@@ -1020,7 +1081,6 @@ function InputApp() {
         </DialogActions>
       </Dialog>
       
-      {/* Profile Modal */}
       <ProfileModal
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
@@ -1029,7 +1089,6 @@ function InputApp() {
         onLogout={logout}
       />
       
-      {/* Non-blocking error/status notifications */}
       <Snackbar
         open={!!errorMessage}
         autoHideDuration={5000}
