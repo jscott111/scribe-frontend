@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
-import { GoogleSTTLanguageCode } from '../../enums/googleSTTLangs'
+import { getSTTLanguageInfo, GoogleSTTLanguageCode } from '../../enums/googleSTTLangs'
 import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip, Snackbar, Alert } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -928,18 +928,22 @@ function InputApp() {
               {Object.keys(connectionCount.byLanguage).length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginLeft: '3rem' }}>
                   {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
-                    <Chip
-                      key={lang}
-                      color="primary"
-                      label={
-                        <span>
-                          {createHybridFlagElement(lang as GoogleSTTLanguageCode, 16)} {count}
-                        </span>
-                      }
-                      size="small"
-                      variant="outlined"
-                      sx={{ fontSize: '0.75rem' }}
-                    />
+                    <Tooltip
+                      title={getSTTLanguageInfo(lang as GoogleSTTLanguageCode).name}
+                    >
+                      <Chip
+                        key={lang}
+                        color="primary"
+                        label={
+                          <span>
+                            {createHybridFlagElement(lang as GoogleSTTLanguageCode, 16)} {count}
+                          </span>
+                        }
+                        size="small"
+                        variant="outlined"
+                        sx={{ fontSize: '0.75rem' }}
+                      />
+                    </Tooltip>
                   ))}
                 </div>
               )}
