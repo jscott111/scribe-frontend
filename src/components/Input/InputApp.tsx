@@ -18,6 +18,7 @@ import ProfileModal from '../Profile/ProfileModal'
 import googleSpeechService from '../../services/googleSpeechService'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
+import { useWakeLock } from '../../utils/useWakeLock'
 
 interface MessageBubble {
   id: string
@@ -239,6 +240,9 @@ function InputApp() {
   const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
   const isMobile = useMediaQuery('(max-width: 850px)')
+
+  // Prevent screen from dimming while using the app
+  useWakeLock(true)
 
   // Keep refs in sync with state for use in socket handlers (avoid stale closures)
   useEffect(() => {
