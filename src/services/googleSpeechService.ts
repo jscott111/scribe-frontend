@@ -214,12 +214,13 @@ class GoogleSpeechService {
         }, 100);
       });
       
-      // Request microphone access with simpler constraints
+      // Request microphone access with browser audio processing enabled
+      // These help filter background noise, echo, and normalize volume
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
         }
       });
 
