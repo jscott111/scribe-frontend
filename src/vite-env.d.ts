@@ -24,3 +24,18 @@ declare module '*.svg' {
   const value: string;
   export default value;
 }
+
+// Wake Lock API type definitions
+interface WakeLockSentinel extends EventTarget {
+  readonly released: boolean;
+  readonly type: 'screen';
+  release(): Promise<void>;
+  addEventListener(type: 'release', listener: () => void): void;
+  removeEventListener(type: 'release', listener: () => void): void;
+}
+
+interface Navigator {
+  wakeLock?: {
+    request(type: 'screen'): Promise<WakeLockSentinel>;
+  };
+}

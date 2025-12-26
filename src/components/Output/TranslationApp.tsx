@@ -13,6 +13,7 @@ import VolumeUpIcon from '@mui/icons-material/VolumeUp'
 import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
+import { useWakeLock } from '../../utils/useWakeLock'
 
 const LandingPageContainer = styled.div`
   display: flex;
@@ -402,6 +403,10 @@ function TranslationApp() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('md'))
   const { userCode, setUserCode, clearUserCode } = useUserCode()
+
+  // Prevent screen from dimming while using the app
+  // Only enable when user has joined a session (not on landing pages)
+  useWakeLock(!showLanguageSelection && !!userCode && !userCodeValidationError)
 
   // Function to validate user code
   const validateUserCode = async (userCodeToValidate: string): Promise<boolean> => {
