@@ -237,15 +237,13 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
             />
             <StatCard
               icon={<TimerIcon sx={{ fontSize: 21 }} />}
-              value={user?.totalSessions && user.totalSessions > 0 
-                ? Math.round((user.totalUsageMinutes || 0) / user.totalSessions)
-                : 0}
-              label="Avg. Minutes"
+              value={`${Math.floor(((user?.totalUsageMinutes || 0) / (user?.totalSessions || 1)) / 60)}h${Math.round(((user?.totalUsageMinutes || 0) / (user?.totalSessions || 1)) % 60)}m`}
+              label="Avg. Time"
               color="#D2B48C"
             />
             <StatCard
               icon={<AccessTimeIcon sx={{ fontSize: 21 }} />}
-              value={`${Math.floor(user?.totalUsageMinutes || 0 / 60)}h${Math.round((user?.totalUsageMinutes || 0) % 60)}m`}
+              value={`${Math.floor((user?.totalUsageMinutes || 0) / 60)}h${Math.round((user?.totalUsageMinutes || 0) % 60)}m`}
               label="Total Time"
               color="#78B48C"
             />
