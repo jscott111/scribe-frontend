@@ -199,6 +199,7 @@ interface TranslationBubble {
   timestamp: Date
   isComplete: boolean
   hasBeenRead?: boolean // Track if this bubble has been read aloud
+  messageId?: string // For guaranteed delivery acknowledgment tracking
 }
 
 function TranslationApp() {
@@ -226,6 +227,7 @@ function TranslationApp() {
   const queueSpeechRef = useRef<((text: string) => void) | null>(null) // Ref for queueSpeech function
   const showLanguageSelectionRef = useRef(true) // Ref to track if user has joined (for socket handlers)
   const processedTranslationsRef = useRef<Set<string>>(new Set()) // Track processed translations for deduplication
+  const processedMessageIdsRef = useRef<Set<string>>(new Set()) // Track processed messageIds for idempotent display
 
   // Handle target language change and save to cookie
   const handleTargetLanguageChange = (language: GoogleCTLanguageCode) => {
@@ -517,6 +519,12 @@ function TranslationApp() {
     })
     
     socketRef.current.on('translationComplete', (data) => {
+      // Immediately acknowledge receipt if messageId is present (guaranteed delivery system)
+      if (data.messageId && socketRef.current?.connected) {
+        socketRef.current.emit('translationAck', { messageId: data.messageId })
+        console.log(`✅ Acknowledged message: ${data.messageId}`)
+      }
+      
       // Track source language from the speaker
       if (data.sourceLanguage) {
         setSourceLanguage(data.sourceLanguage)
@@ -525,6 +533,13 @@ function TranslationApp() {
       const bubbleId = data.bubbleId || Date.now().toString()
       const translatedText = data.translatedText || 'Translation failed'
       const originalText = data.originalText || 'Unknown'
+      const messageId = data.messageId
+      
+      // Idempotent display: Check if we've already displayed this messageId
+      if (messageId && processedMessageIdsRef.current.has(messageId)) {
+        console.log(`⚠️ [Idempotent] Skipping already displayed messageId: ${messageId}`)
+        return
+      }
       
       // Create a unique key combining bubbleId AND text for true duplicate detection
       // Only skip if we've seen this EXACT combination before
@@ -533,6 +548,16 @@ function TranslationApp() {
       if (processedTranslationsRef.current.has(dedupeKey)) {
         console.log('⚠️ Skipping true duplicate:', dedupeKey.substring(0, 60))
         return
+      }
+      
+      // Mark messageId as processed for idempotent display
+      if (messageId) {
+        processedMessageIdsRef.current.add(messageId)
+        // Limit size to prevent memory bloat
+        if (processedMessageIdsRef.current.size > 500) {
+          const iterator = processedMessageIdsRef.current.values()
+          processedMessageIdsRef.current.delete(iterator.next().value)
+        }
       }
       
       // Mark as processed
@@ -554,7 +579,8 @@ function TranslationApp() {
           : targetLanguage,
         timestamp: new Date(),
         isComplete: true,
-        hasBeenRead: false
+        hasBeenRead: false,
+        messageId: messageId // Store for recovery tracking
       }
       
       setTranslationBubbles(prev => [...prev, newBubble])
@@ -604,6 +630,10 @@ function TranslationApp() {
       if (currentTargetLanguage && !isOnLandingPage) {
         console.log(`🔗 Re-establishing target language after reconnect: ${currentTargetLanguage}`)
         socketRef.current?.emit('setTargetLanguage', { targetLanguage: currentTargetLanguage })
+        
+        // Request any missed messages that were sent during disconnection
+        console.log('📬 Requesting missed messages after reconnect')
+        socketRef.current?.emit('requestMissedMessages')
       }
     })
 

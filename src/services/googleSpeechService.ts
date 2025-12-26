@@ -93,6 +93,7 @@ class GoogleSpeechService {
         this.socket.removeAllListeners('transcriptionUpdate');
         this.socket.removeAllListeners('finalResultReceived');
         this.socket.removeAllListeners('streamRestarted');
+        this.socket.removeAllListeners('streamRestartPending');
         this.socket.removeAllListeners('streamRestart');
       }
       
@@ -105,39 +106,53 @@ class GoogleSpeechService {
         const isCurrentBubble = data.bubbleId === this.currentBubbleId;
         const isPreviousBubble = data.bubbleId === this.previousBubbleId;
         
-        if (!isCurrentBubble && !isPreviousBubble) {
-          console.log(`⚠️ Ignoring result for unknown bubble: ${data.bubbleId}`);
-          return;
-        }
+        // Debug logging for transcription flow
+        console.log(`📝 transcriptionUpdate: "${data.transcript?.substring(0, 30)}..." isFinal=${data.isFinal}, bubbleId=${data.bubbleId?.substring(0, 15)}, current=${this.currentBubbleId?.substring(0, 15)}, match=${isCurrentBubble || isPreviousBubble}`);
         
-        // Forward to callbacks if available
-        if (data.isFinal && this.callbacks?.onFinalResult) {
-          this.callbacks.onFinalResult({
-            transcript: data.transcript,
-            isFinal: data.isFinal,
-            confidence: data.confidence,
-            wordCount: this.currentWordCount,
-            bubbleId: data.bubbleId
-          });
-          // Clear current transcript since we've received a final result
-          if (isCurrentBubble) {
-            this.currentTranscript = '';
-            this.hasReceivedFinalResult = true;
+        // For FINAL results: accept from current OR previous bubble (catch late finals)
+        // For INTERIM results: ONLY accept from current bubble (prevents bouncing during restart)
+        if (data.isFinal) {
+          if (!isCurrentBubble && !isPreviousBubble) {
+            console.log(`⚠️ Ignoring final result for unknown bubble: ${data.bubbleId}`);
+            return;
           }
-          // Clear previous bubble ID after receiving its final result
-          if (isPreviousBubble) {
-            this.previousBubbleId = null;
+          
+          if (this.callbacks?.onFinalResult) {
+            this.callbacks.onFinalResult({
+              transcript: data.transcript,
+              isFinal: data.isFinal,
+              confidence: data.confidence,
+              wordCount: this.currentWordCount,
+              bubbleId: data.bubbleId
+            });
+            // Clear current transcript since we've received a final result
+            if (isCurrentBubble) {
+              this.currentTranscript = '';
+              this.hasReceivedFinalResult = true;
+            }
+            // Clear previous bubble ID after receiving its final result
+            if (isPreviousBubble) {
+              this.previousBubbleId = null;
+            }
           }
-        } else if (!data.isFinal && this.callbacks?.onInterimResult) {
-          // Track the current transcript so we can save it on stream restart
-          this.currentTranscript = data.transcript;
-          this.callbacks.onInterimResult({
-            transcript: data.transcript,
-            isFinal: data.isFinal,
-            confidence: data.confidence,
-            wordCount: this.currentWordCount,
-            bubbleId: data.bubbleId
-          });
+        } else {
+          // INTERIM results: only accept from current bubble to prevent bouncing
+          if (!isCurrentBubble) {
+            console.log(`⚠️ Ignoring interim result from non-current bubble: ${data.bubbleId?.substring(0, 15)}`);
+            return;
+          }
+          
+          if (this.callbacks?.onInterimResult) {
+            // Track the current transcript so we can save it on stream restart
+            this.currentTranscript = data.transcript;
+            this.callbacks.onInterimResult({
+              transcript: data.transcript,
+              isFinal: data.isFinal,
+              confidence: data.confidence,
+              wordCount: this.currentWordCount,
+              bubbleId: data.bubbleId
+            });
+          }
         }
       });
       
@@ -155,11 +170,27 @@ class GoogleSpeechService {
         this.hasReceivedFinalResult = false;
       });
       
-      // Listen for stream restart requests from backend
+      // Listen for PENDING stream restart - this is sent BEFORE the new stream starts
+      // We MUST update bubbleId here so the new stream uses a different ID than the old stream
+      this.socket.on('streamRestartPending', (data: any) => {
+        console.log('🔄 Stream restart pending:', data.reason);
+        if (this.isRecording) {
+          // Save current bubble ID as previous to allow late FINAL results to come through
+          this.previousBubbleId = this.currentBubbleId;
+          // Generate new bubble ID IMMEDIATELY so new stream uses different ID
+          this.currentBubbleId = this.generateBubbleId();
+          console.log(`🔄 BubbleId updated: previous=${this.previousBubbleId?.substring(0, 15)}, new=${this.currentBubbleId?.substring(0, 15)}`);
+          // DON'T clear currentTranscript here - InputApp handles saving the displayed text
+          this.hasReceivedFinalResult = false;
+        }
+      });
+      
+      // Listen for stream restart requests from backend (for error recovery)
       // Note: InputApp.tsx handles saving displayed interim text on stream restart
       // This handler only manages internal state for the new stream
       this.socket.on('streamRestart', (data: any) => {
         console.log('🔄 Backend requested stream restart:', data.reason);
+        console.log(`🔄 BEFORE restart: currentBubbleId=${this.currentBubbleId?.substring(0, 15)}, previousBubbleId=${this.previousBubbleId?.substring(0, 15)}`);
         if (this.isRecording) {
           // Note: We no longer save interim here - InputApp handles this to avoid duplicates
           // and ensure the displayed text (which may differ from internal state) is preserved
@@ -170,7 +201,7 @@ class GoogleSpeechService {
           this.currentBubbleId = this.generateBubbleId();
           this.currentTranscript = ''; // Reset for new bubble
           this.hasReceivedFinalResult = false;
-          console.log('🔄 Stream restarted with new bubble ID:', this.currentBubbleId);
+          console.log(`🔄 AFTER restart: currentBubbleId=${this.currentBubbleId?.substring(0, 15)}, previousBubbleId=${this.previousBubbleId?.substring(0, 15)}`);
         }
       });
       

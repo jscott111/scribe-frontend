@@ -232,6 +232,9 @@ function InputApp() {
   const qrCodeRef = useRef<HTMLDivElement>(null)
   const currentTranscriptionRef = React.useRef<string>('') // Ref to track current transcription for stream restart handler
   const sourceLanguageRef = React.useRef<string>('en-CA') // Ref to track source language for stream restart handler
+  const pendingTranscriptionRef = React.useRef<{ id: string; text: string; sourceLanguage: string; timestamp: number } | null>(null) // For pending transcription during overlap
+  const pendingPromotionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null) // Timeout to promote pending transcription
+  const processedTranscriptsRef = React.useRef<Set<string>>(new Set()) // Track processed transcripts to prevent duplicates during stream overlap
   const { user, tokens, logout, updateTokens, getConnectionInfo } = useAuth()
   const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
@@ -418,10 +421,77 @@ function InputApp() {
       console.log('💓 Received pong from server')
     })
 
-    // Listen for stream restart events to save displayed interim text
+    // Listen for pre-emptive stream restart (overlap transition - 5 seconds before actual restart)
+    // This gives us time to save pending transcription and wait for final result
+    socketRef.current.on('streamRestartPending', (data: { reason: string, timestamp: number }) => {
+      console.log('⏳ InputApp: Stream restart PENDING event received, reason:', data.reason)
+      const displayedText = currentTranscriptionRef.current
+      if (displayedText && displayedText.trim()) {
+        console.log('💾 InputApp: Saving pending transcription, will promote after 3s if no final result')
+        
+        // Store pending transcription for potential promotion
+        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        pendingTranscriptionRef.current = {
+          id: pendingId,
+          text: displayedText,
+          sourceLanguage: sourceLanguageRef.current,
+          timestamp: Date.now()
+        }
+        
+        // Set timeout to promote pending to final if no final result arrives
+        if (pendingPromotionTimeoutRef.current) {
+          clearTimeout(pendingPromotionTimeoutRef.current)
+        }
+        pendingPromotionTimeoutRef.current = setTimeout(() => {
+          const pending = pendingTranscriptionRef.current
+          if (pending && pending.text && pending.text.trim()) {
+            console.log('⏰ Promoting pending transcription after 3s timeout:', pending.text)
+            
+            const newBubble: MessageBubble = {
+              id: pending.id,
+              text: pending.text,
+              timestamp: new Date(),
+              isComplete: false
+            }
+            setTranscriptionBubbles(prev => [...prev, newBubble])
+            
+            // Send to backend for translation
+            if (socketRef.current?.connected) {
+              socketRef.current.emit('speechTranscription', {
+                transcription: pending.text,
+                sourceLanguage: pending.sourceLanguage,
+                bubbleId: pending.id
+              })
+            }
+            
+            setCurrentTranscription('')
+            
+            setTimeout(() => {
+              setTranscriptionBubbles(prev =>
+                prev.map(bubble =>
+                  bubble.id === pending.id ? { ...bubble, isComplete: true } : bubble
+                )
+              )
+            }, 250)
+            
+            pendingTranscriptionRef.current = null
+          }
+        }, 3000) // Wait 3 seconds for final result before promoting
+      }
+    })
+
+    // Listen for stream restart events to save displayed interim text (fallback for error recovery)
     // This ensures no speech is lost when Google Cloud STT stream restarts
     socketRef.current.on('streamRestart', (data: { reason: string }) => {
       console.log('🔄 InputApp: Stream restart event received, reason:', data.reason)
+      
+      // Clear any pending promotion since we're doing immediate save
+      if (pendingPromotionTimeoutRef.current) {
+        clearTimeout(pendingPromotionTimeoutRef.current)
+        pendingPromotionTimeoutRef.current = null
+      }
+      pendingTranscriptionRef.current = null
+      
       const displayedText = currentTranscriptionRef.current
       if (displayedText && displayedText.trim()) {
         console.log('💾 InputApp: Saving displayed interim text before stream restart:', displayedText)
@@ -530,11 +600,35 @@ function InputApp() {
         setCurrentTranscription(result.transcript)
       },
       onFinalResult: (result) => {
+        // Clear any pending transcription since we got a real final result
+        if (pendingPromotionTimeoutRef.current) {
+          clearTimeout(pendingPromotionTimeoutRef.current)
+          pendingPromotionTimeoutRef.current = null
+        }
+        pendingTranscriptionRef.current = null
+        
         // Don't create empty bubbles
         if (!result.transcript || !result.transcript.trim()) {
           console.log('⚠️ Ignoring empty final result')
           setCurrentTranscription('')
           return
+        }
+        
+        // Deduplication: Check if we've already processed this transcript
+        // Use a content hash to catch duplicates from overlapping streams
+        const transcriptKey = result.transcript.trim().toLowerCase()
+        if (processedTranscriptsRef.current.has(transcriptKey)) {
+          console.log('⚠️ Ignoring duplicate transcript:', result.transcript.substring(0, 30))
+          setCurrentTranscription('')
+          return
+        }
+        
+        // Mark as processed (with cleanup of old entries)
+        processedTranscriptsRef.current.add(transcriptKey)
+        // Keep set size reasonable - remove old entries if too large
+        if (processedTranscriptsRef.current.size > 50) {
+          const entries = Array.from(processedTranscriptsRef.current)
+          entries.slice(0, 25).forEach(key => processedTranscriptsRef.current.delete(key))
         }
         
         const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -992,7 +1086,7 @@ function InputApp() {
                 <Typography variant="captionText">Listening...</Typography>
               </MessageBubble>
             )}
-            {transcriptionBubbles.slice().reverse().map((bubble) => (
+            {[...transcriptionBubbles].reverse().map((bubble) => (
               <MessageBubble key={bubble.id} elevation={3}>
                 <Typography variant="bodyText">{bubble.text}</Typography>
               </MessageBubble>
