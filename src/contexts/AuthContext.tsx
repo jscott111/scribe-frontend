@@ -10,6 +10,8 @@ interface User {
   createdAt: string
   updatedAt?: string
   totpEnabled?: boolean
+  totalSessions?: number
+  totalUsageMinutes?: number
 }
 
 interface AuthTokens {
