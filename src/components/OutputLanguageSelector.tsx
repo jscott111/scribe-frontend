@@ -33,6 +33,12 @@ const OutputLanguageSelector: React.FC<OutputLanguageSelectorProps> = ({
       onOpen={() => setIsOpen(true)}
       onClose={() => setIsOpen(false)}
       label={label}
+      renderValue={(value) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {createHybridFlagElement(value, 18)}
+          <span>{getCTLanguageInfo(value).name}</span>
+        </div>
+      )}
       sx={{ 
         width: '100%',
         maxWidth: '300px',

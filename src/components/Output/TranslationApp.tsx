@@ -15,6 +15,7 @@ import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 import { useWakeLock } from '../../utils/useWakeLock'
 import TypingIndicator from '../UI/TypingIndicator'
+import { isRTLLanguage } from '../../utils/rtlUtils'
 
 const LandingPageContainer = styled.div`
   display: flex;
@@ -130,12 +131,14 @@ const RightPanel = styled(Paper)<{ isMobile: boolean }>`
   overflow: hidden;
 `
 
-const MessageBubble = styled(Paper)`
+const MessageBubble = styled(Paper)<{ isRTL?: boolean }>`
   padding: 0.75rem 1rem;
   border-radius: 2rem !important;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
+  text-align: ${props => props.isRTL ? 'right' : 'left'};
+  direction: ${props => props.isRTL ? 'rtl' : 'ltr'};
 `
 
 const BubblesContainer = styled.div`
@@ -1013,7 +1016,11 @@ function TranslationApp() {
         <RightPanelContent isMobile={isMobile}>
           <BubblesContainer>
             {isSpeakerTyping && (
-              <MessageBubble elevation={1} sx={{ opacity: 0.7, alignSelf: 'flex-end' }}>
+              <MessageBubble 
+                elevation={1} 
+                isRTL={isRTLLanguage(targetLanguage)}
+                sx={{ opacity: 0.7 }}
+              >
                 <TypingIndicator visible={true} />
               </MessageBubble>
             )}
@@ -1028,7 +1035,11 @@ function TranslationApp() {
               </EmptyState>
             ) : (
               translationBubbles.slice().reverse().map((bubble) => (
-                <MessageBubble key={bubble.id} elevation={3}>
+                <MessageBubble 
+                  key={bubble.id} 
+                  elevation={3}
+                  isRTL={isRTLLanguage(bubble.targetLanguage)}
+                >
                   <Typography variant="bodyText">
                     {bubble.translatedText}
                   </Typography>
