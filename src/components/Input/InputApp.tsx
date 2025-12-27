@@ -32,7 +32,7 @@ interface MessageBubble {
 const MainContainer = styled.div<{ isMobile: boolean }>`
   display: flex;
   flex-direction: ${props => props.isMobile ? 'column' : 'row'};
-  height: ${props => props.isMobile ? 'calc(100vh - 2rem)' : '100vh'};
+  height: ${props => props.isMobile ? 'calc(100svh - 2rem)' : '100vh'};
   width: ${props => props.isMobile ? 'calc(100vw - 2rem)' : '100vw'};
   padding: ${props => props.isMobile ? '0.5rem' : '0'};
   margin: 0;
