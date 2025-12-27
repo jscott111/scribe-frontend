@@ -64,7 +64,7 @@ const StartButton = styled(Button)`
 const MainContainer = styled.div<{ isMobile: boolean }>`
   display: flex;
   flex-direction: ${props => props.isMobile ? 'column' : 'row'};
-  height: ${props => props.isMobile ? 'calc(100vh - 2rem)' : '100%'};
+  height: ${props => props.isMobile ? 'calc(100svh - 2rem)' : '100%'};
   width: ${props => props.isMobile ? 'calc(100vw - 2rem)' : '100%'};
   padding: ${props => props.isMobile ? '0.5rem' : '0'};
   margin: 0;
@@ -150,6 +150,13 @@ const BubblesContainer = styled.div`
   padding: 1rem 0;
   gap: 0.5rem;
   box-sizing: border-box;
+  
+  /* Hide any stray text nodes */
+  font-size: 0;
+  
+  & > * {
+    font-size: initial;
+  }
 `
 
 const EmptyState = styled.div`
