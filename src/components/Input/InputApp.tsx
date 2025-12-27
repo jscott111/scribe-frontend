@@ -3,6 +3,7 @@ import InputLanguageSelector from '../InputLanguageSelector'
 import DeviceSelector from './DeviceSelector'
 import Typography from '../UI/Typography'
 import { getSTTLanguageInfo, GoogleSTTLanguageCode } from '../../enums/googleSTTLangs'
+import { getCTLanguageInfo, isValidCTLanguageCode } from '../../enums/googleCTLangs'
 import { Paper, Chip, Button, Box, IconButton, useMediaQuery, useTheme, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, Tooltip, Snackbar, Alert } from '@mui/material'
 import PeopleIcon from '@mui/icons-material/People'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -19,6 +20,7 @@ import googleSpeechService from '../../services/googleSpeechService'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 import { useWakeLock } from '../../utils/useWakeLock'
+import { isRTLLanguage } from '../../utils/rtlUtils'
 
 interface MessageBubble {
   id: string
@@ -126,12 +128,14 @@ const QRCodeContainer = styled.div`
   align-items: center;
 `
 
-const MessageBubble = styled(Paper)`
+const MessageBubble = styled(Paper)<{ isRTL?: boolean }>`
   padding: 0.75rem 1rem;
   border-radius: 2rem!important;
   width: fit-content;
   max-width: 80%;
   align-self: flex-end;
+  text-align: ${props => props.isRTL ? 'right' : 'left'};
+  direction: ${props => props.isRTL ? 'rtl' : 'ltr'};
 `
 
 const BubblesContainer = styled.div`
@@ -927,24 +931,36 @@ function InputApp() {
               </div>
               {Object.keys(connectionCount.byLanguage).length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginLeft: '3rem' }}>
-                  {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => (
-                    <Tooltip
-                      title={getSTTLanguageInfo(lang as GoogleSTTLanguageCode).name}
-                    >
-                      <Chip
+                  {Object.entries(connectionCount.byLanguage).sort(([langA, countA], [langB, countB]) => countB - countA).map(([lang, count]) => {
+                    // Try CT language first (for listeners), fallback to STT (for speakers)
+                    let languageName = 'Unknown'
+                    if (isValidCTLanguageCode(lang)) {
+                      languageName = getCTLanguageInfo(lang).name
+                    } else {
+                      const sttInfo = getSTTLanguageInfo(lang as GoogleSTTLanguageCode)
+                      languageName = sttInfo.name !== 'Unknown' ? sttInfo.name : lang
+                    }
+                    
+                    return (
+                      <Tooltip
                         key={lang}
-                        color="primary"
-                        label={
-                          <span>
-                            {createHybridFlagElement(lang as GoogleSTTLanguageCode, 16)} {count}
-                          </span>
-                        }
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontSize: '0.75rem' }}
-                      />
-                    </Tooltip>
-                  ))}
+                        title={languageName}
+                      >
+                        <Chip
+                          key={lang}
+                          color="primary"
+                          label={
+                            <span>
+                              {createHybridFlagElement(lang, 16)} {count}
+                            </span>
+                          }
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontSize: '0.75rem' }}
+                        />
+                      </Tooltip>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1089,13 +1105,21 @@ function InputApp() {
           
           <BubblesContainer>
             {currentTranscription && (
-              <MessageBubble elevation={1} sx={{ opacity: 0.7 }}>
+              <MessageBubble 
+                elevation={1} 
+                isRTL={isRTLLanguage(sourceLanguage)}
+                sx={{ opacity: 0.7 }}
+              >
                 <Typography variant="bodyText">{currentTranscription}</Typography>
                 <Typography variant="captionText">Listening...</Typography>
               </MessageBubble>
             )}
             {[...transcriptionBubbles].reverse().map((bubble) => (
-              <MessageBubble key={bubble.id} elevation={3}>
+              <MessageBubble 
+                key={bubble.id} 
+                elevation={3}
+                isRTL={isRTLLanguage(sourceLanguage)}
+              >
                 <Typography variant="bodyText">{bubble.text}</Typography>
               </MessageBubble>
             ))}
