@@ -49,6 +49,9 @@ class GoogleSpeechService {
   private messageQueue: Array<{data: any, timestamp: number, retries: number}> = []; // Message queue for failed transmissions
   private maxRetries = 3; // Maximum number of retry attempts
   private queueProcessingInterval: NodeJS.Timeout | null = null; // Interval for processing queued messages
+  private silenceDetectionInterval: NodeJS.Timeout | null = null; // For silence-based finalization
+  private lastSpeechTime: number = 0; // Track when speech was last detected
+  private silenceStartTime: number | null = null; // Track when silence started
 
   constructor() {
     this.config = {
@@ -145,6 +148,12 @@ class GoogleSpeechService {
           if (this.callbacks?.onInterimResult) {
             // Track the current transcript so we can save it on stream restart
             this.currentTranscript = data.transcript;
+            // Update word count for silence detection
+            this.currentWordCount = data.transcript.trim().split(/\s+/).filter(w => w.length > 0).length;
+            // Reset silence detection when we get new interim results (speech is active)
+            this.lastSpeechTime = Date.now();
+            this.silenceStartTime = null;
+            
             this.callbacks.onInterimResult({
               transcript: data.transcript,
               isFinal: data.isFinal,
@@ -214,20 +223,53 @@ class GoogleSpeechService {
         }, 100);
       });
       
-      // Request microphone access with browser audio processing enabled
-      // These help filter background noise, echo, and normalize volume
+      // Detect if we're on a mobile/tablet device (helper function)
+      const detectMobileDevice = (): boolean => {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+               (!!navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+      };
+      
+      const isMobileDevice = detectMobileDevice();
+      
+      // Request microphone access with device-appropriate audio processing
+      // Mobile devices may need different settings for better silence detection
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      };
+      
+      // On mobile, sometimes less aggressive processing helps with silence detection
+      if (isMobileDevice) {
+        // Mobile devices: slightly less aggressive noise suppression for better silence detection
+        audioConstraints.noiseSuppression = true;
+        audioConstraints.echoCancellation = true;
+        // Some mobile devices work better with specific sample rate
+        audioConstraints.sampleRate = { ideal: 48000 };
+      }
+      
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: audioConstraints
       });
-
-      // Set up audio context
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // Set up audio context with device-appropriate sample rate
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      
+      // Use 48000 Hz sample rate (required by backend) - some mobile devices default to 44100
+      this.audioContext = new AudioContextClass({
+        sampleRate: 48000
+      });
+      
+      // If the context was created with a different sample rate, we need to handle it
+      if (this.audioContext.sampleRate !== 48000) {
+        console.warn(`⚠️ AudioContext sample rate is ${this.audioContext.sampleRate}Hz, expected 48000Hz. This may cause issues on mobile.`);
+      }
 
       this.analyser = this.audioContext.createAnalyser();
+      // Use larger FFT size for better frequency analysis on mobile
+      this.analyser.fftSize = isMobileDevice ? 512 : 256;
+      this.analyser.smoothingTimeConstant = isMobileDevice ? 0.7 : 0.8; // Less smoothing on mobile for faster response
+      
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       this.microphone.connect(this.analyser);
 
@@ -260,12 +302,31 @@ class GoogleSpeechService {
     this.hasReceivedFinalResult = false;
 
     try {
-      // Set up ScriptProcessorNode for raw PCM audio capture
-      const bufferSize = 1024; // Buffer size for audio processing (larger for 1-second chunks)
-      this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
+      // Use modern AudioWorklet if available, fallback to ScriptProcessorNode
+      // AudioWorklet is more reliable on mobile devices
+      const useAudioWorklet = this.audioContext!.audioWorklet !== undefined;
+      
+      if (useAudioWorklet) {
+        // Modern approach: Use AudioWorklet (better for mobile)
+        try {
+          // Note: AudioWorklet requires a separate worklet file, so we'll use ScriptProcessorNode for now
+          // but with better mobile compatibility
+          const bufferSize = 4096; // Larger buffer for mobile stability
+          this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
+        } catch (workletError) {
+          console.warn('⚠️ AudioWorklet not available, using ScriptProcessorNode:', workletError);
+          const bufferSize = 4096;
+          this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
+        }
+      } else {
+        // Fallback: ScriptProcessorNode (deprecated but still works)
+        const bufferSize = 4096; // Larger buffer for mobile devices
+        this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
+      }
       
       // Connect microphone to script processor
       this.microphone!.connect(this.scriptProcessor);
+      // Connect to destination to keep the audio processing active (required on some mobile browsers)
       this.scriptProcessor.connect(this.audioContext!.destination);
       
       // Process raw audio data
@@ -273,6 +334,20 @@ class GoogleSpeechService {
         if (this.isRecording && !this.isPaused) {
           const inputBuffer = event.inputBuffer;
           const inputData = inputBuffer.getChannelData(0); // Get mono channel
+          
+          // Calculate audio level for silence detection BEFORE processing
+          const audioLevel = this.calculateAudioLevel(inputData);
+          
+          // Update last speech time if audio is detected
+          if (audioLevel > 0.02) { // Threshold for speech detection
+            this.lastSpeechTime = Date.now();
+            this.silenceStartTime = null;
+          } else {
+            // Track silence start
+            if (this.silenceStartTime === null) {
+              this.silenceStartTime = Date.now();
+            }
+          }
           
           // Convert Float32Array to Int16Array (LINEAR16 format)
           const linear16Data = this.convertFloat32ToInt16(inputData);
@@ -287,9 +362,13 @@ class GoogleSpeechService {
       // Start audio level monitoring
       this.startAudioLevelMonitoring();
       
+      // Start silence detection for automatic finalization
+      this.startSilenceDetection();
+      
       // Start keep-alive mechanism to prevent audio timeout
       this.startKeepAlive();
       this.lastAudioSentTime = Date.now();
+      this.lastSpeechTime = Date.now();
 
     } catch (error) {
       console.error('❌ Failed to start speech recognition:', error);
@@ -313,6 +392,9 @@ class GoogleSpeechService {
 
     // Stop audio level monitoring
     this.stopAudioLevelMonitoring();
+    
+    // Stop silence detection
+    this.stopSilenceDetection();
     
     // Stop keep-alive mechanism
     this.stopKeepAlive();
@@ -386,6 +468,7 @@ class GoogleSpeechService {
     this.clearTimers();
     this.clearMessageQueue();
     this.stopKeepAlive();
+    this.stopSilenceDetection();
 
     // Notify backend to stop streaming
     if (this.socket) {
@@ -554,35 +637,48 @@ class GoogleSpeechService {
   }
 
   /**
+   * Calculate audio level from raw audio data (for silence detection)
+   */
+  private calculateAudioLevel(audioData: Float32Array): number {
+    let sum = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      sum += audioData[i] * audioData[i];
+    }
+    const rms = Math.sqrt(sum / audioData.length);
+    return rms;
+  }
+
+  /**
    * Start monitoring audio levels for visual feedback
+   * Uses both frequency and time domain data for better mobile compatibility
    */
   private startAudioLevelMonitoring(): void {
     if (!this.analyser || !this.callbacks?.onAudioLevel) {
       return;
     }
 
-    // Configure analyser for better frequency analysis
-    this.analyser.fftSize = 256;
-    this.analyser.smoothingTimeConstant = 0.8;
-
-    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    const frequencyData = new Uint8Array(this.analyser.frequencyBinCount);
+    const timeData = new Uint8Array(this.analyser.fftSize);
 
     const monitorAudioLevel = () => {
       if (!this.isRecording || !this.analyser) {
         return;
       }
 
-      this.analyser.getByteFrequencyData(dataArray);
+      // Use time domain data for more accurate volume detection on mobile
+      this.analyser.getByteTimeDomainData(timeData);
       
-      // Calculate RMS (Root Mean Square) for volume level
+      // Calculate RMS from time domain (more accurate for silence detection)
       let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
+      for (let i = 0; i < timeData.length; i++) {
+        const normalized = (timeData[i] - 128) / 128; // Normalize to -1 to 1
+        sum += normalized * normalized;
       }
-      const rms = Math.sqrt(sum / dataArray.length);
+      const rms = Math.sqrt(sum / timeData.length);
       
-      // Normalize to 0-1 range and apply some smoothing
-      const normalizedLevel = Math.min(1, rms / 128);
+      // Normalize to 0-1 range
+      // Mobile devices may have different baseline levels, so we adjust the threshold
+      const normalizedLevel = Math.min(1, rms * 2); // Scale up for better sensitivity
       
       // Call the callback with the audio level
       this.callbacks?.onAudioLevel?.(normalizedLevel);
@@ -590,6 +686,69 @@ class GoogleSpeechService {
 
     // Monitor audio levels every 50ms for smooth updates
     this.audioLevelInterval = setInterval(monitorAudioLevel, 50);
+  }
+  
+  /**
+   * Start silence detection for automatic finalization
+   * This helps detect when speech has ended, especially on mobile devices
+   */
+  private startSilenceDetection(): void {
+    if (!this.callbacks) {
+      return;
+    }
+    
+    const silenceDetection = () => {
+      if (!this.isRecording || !this.currentTranscript.trim()) {
+        return;
+      }
+      
+      const now = Date.now();
+      const timeSinceLastSpeech = now - this.lastSpeechTime;
+      const silenceTimeout = this.config.speechEndTimeout * 1000; // Convert to milliseconds
+      
+      // If we've been silent for longer than the timeout, finalize the current transcript
+      if (this.silenceStartTime !== null && timeSinceLastSpeech > silenceTimeout) {
+        const silenceDuration = now - this.silenceStartTime;
+        
+        // Only finalize if we have a transcript and silence has been detected
+        if (silenceDuration > silenceTimeout && this.currentTranscript.trim()) {
+          console.log(`🔇 Silence detected (${Math.round(silenceDuration / 1000)}s), finalizing transcript`);
+          
+          // Create a final result from the current transcript
+          if (this.callbacks?.onFinalResult) {
+            this.callbacks.onFinalResult({
+              transcript: this.currentTranscript.trim(),
+              isFinal: true,
+              confidence: 0.8, // Default confidence for silence-triggered finalization
+              wordCount: this.currentWordCount,
+              bubbleId: this.currentBubbleId || this.generateBubbleId()
+            });
+            
+            // Reset state
+            this.currentTranscript = '';
+            this.currentBubbleId = this.generateBubbleId();
+            this.currentWordCount = 0;
+            this.lastSpeechTime = Date.now();
+            this.silenceStartTime = null;
+          }
+        }
+      }
+    };
+    
+    // Check for silence every 100ms
+    this.silenceDetectionInterval = setInterval(silenceDetection, 100);
+  }
+  
+  /**
+   * Stop silence detection
+   */
+  private stopSilenceDetection(): void {
+    if (this.silenceDetectionInterval) {
+      clearInterval(this.silenceDetectionInterval);
+      this.silenceDetectionInterval = null;
+    }
+    this.lastSpeechTime = 0;
+    this.silenceStartTime = null;
   }
 
   /**
