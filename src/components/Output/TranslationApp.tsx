@@ -14,6 +14,7 @@ import VolumeOffIcon from '@mui/icons-material/VolumeOff'
 import { setCookie, getCookie } from '../../utils/cookieUtils'
 import { createHybridFlagElement } from '../../utils/flagEmojiUtils.tsx'
 import { useWakeLock } from '../../utils/useWakeLock'
+import TypingIndicator from '../UI/TypingIndicator'
 
 const LandingPageContainer = styled.div`
   display: flex;
@@ -216,6 +217,7 @@ function TranslationApp() {
   const [targetLanguage, setTargetLanguage] = useState<GoogleCTLanguageCode>(getInitialTargetLanguage())
   const [sourceLanguage, setSourceLanguage] = useState<string | undefined>(undefined) // Track source language from speaker
   const [translationBubbles, setTranslationBubbles] = useState<TranslationBubble[]>([])
+  const [isSpeakerTyping, setIsSpeakerTyping] = useState(false) // Track if speaker is typing (interim transcription)
   
   // Text-to-Speech state
   const [ttsEnabled, setTtsEnabled] = useState(false)
@@ -521,6 +523,10 @@ function TranslationApp() {
       console.error('🔗 TranslationApp - Connection error:', error)
       setIsConnecting(false)
       setIsConnected(false)
+    })
+    
+    socketRef.current.on('speakerTyping', (data: { isTyping: boolean }) => {
+      setIsSpeakerTyping(data.isTyping)
     })
     
     socketRef.current.on('translationComplete', (data) => {
@@ -1006,6 +1012,11 @@ function TranslationApp() {
       <RightPanel elevation={3} isMobile={isMobile}>
         <RightPanelContent isMobile={isMobile}>
           <BubblesContainer>
+            {isSpeakerTyping && (
+              <MessageBubble elevation={1} sx={{ opacity: 0.7, alignSelf: 'flex-end' }}>
+                <TypingIndicator visible={true} />
+              </MessageBubble>
+            )}
             {translationBubbles.length === 0 ? (
               <EmptyState>
                 <Typography variant="sectionHeader" sx={{ marginBottom: '0.5rem' }}>
