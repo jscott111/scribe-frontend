@@ -89,6 +89,12 @@ body {
   height: 100vh;
 }
 
+/* Hide browser extension injected content that adds stray semicolons */
+#BUILDIT-floating-button-container-root {
+  display: none !important;
+  visibility: hidden !important;
+}
+
 /* Global button styles */
 button {
   border-radius: 8px;
