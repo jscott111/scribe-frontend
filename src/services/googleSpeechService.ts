@@ -232,19 +232,16 @@ class GoogleSpeechService {
       const isMobileDevice = detectMobileDevice();
       
       // Request microphone access with device-appropriate audio processing
-      // Mobile devices may need different settings for better silence detection
+      // Enable echo cancellation and noise suppression for better transcription quality
+      // autoGainControl disabled as it can distort speech and reduce transcription quality
       const audioConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+        echoCancellation: true,      // Reduces echo/feedback - important for quality
+        noiseSuppression: true,       // Reduces background noise - improves accuracy
+        autoGainControl: false        // Disabled - can distort speech and reduce quality
       };
       
-      // On mobile, sometimes less aggressive processing helps with silence detection
+      // Some mobile devices may need specific sample rate
       if (isMobileDevice) {
-        // Mobile devices: slightly less aggressive noise suppression for better silence detection
-        audioConstraints.noiseSuppression = true;
-        audioConstraints.echoCancellation = true;
-        // Some mobile devices work better with specific sample rate
         audioConstraints.sampleRate = { ideal: 48000 };
       }
       
