@@ -29,6 +29,7 @@ class GoogleSpeechService {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private microphone: MediaStreamAudioSourceNode | null = null;
+  private gainNode: GainNode | null = null; // Gain control for microphone input
   private stream: MediaStream | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
   private isRecording = false;
@@ -267,8 +268,14 @@ class GoogleSpeechService {
       this.analyser.fftSize = isMobileDevice ? 512 : 256;
       this.analyser.smoothingTimeConstant = isMobileDevice ? 0.7 : 0.8; // Less smoothing on mobile for faster response
       
+      // Create gain node for user-controlled microphone gain adjustment
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = 1.0; // Default gain (100% - no adjustment)
+      
+      // Connect audio chain: microphone -> gainNode -> analyser
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
-      this.microphone.connect(this.analyser);
+      this.microphone.connect(this.gainNode);
+      this.gainNode.connect(this.analyser);
 
     } catch (error) {
       console.error('❌ Failed to initialize Google Speech Service:', error);
@@ -321,8 +328,8 @@ class GoogleSpeechService {
         this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
       }
       
-      // Connect microphone to script processor
-      this.microphone!.connect(this.scriptProcessor);
+      // Connect gain node to script processor (gain node is already connected to microphone)
+      this.gainNode!.connect(this.scriptProcessor);
       // Connect to destination to keep the audio processing active (required on some mobile browsers)
       this.scriptProcessor.connect(this.audioContext!.destination);
       
@@ -332,8 +339,16 @@ class GoogleSpeechService {
           const inputBuffer = event.inputBuffer;
           const inputData = inputBuffer.getChannelData(0); // Get mono channel
           
-          // Calculate audio level for silence detection BEFORE processing
-          const audioLevel = this.calculateAudioLevel(inputData);
+          // Apply gain manually (create a copy to avoid modifying the input buffer)
+          // The gain node should already apply it, but we'll apply it again here to ensure it works
+          const currentGain = this.gainNode?.gain.value ?? 1.0;
+          const gainAdjustedData = new Float32Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            gainAdjustedData[i] = inputData[i] * currentGain;
+          }
+          
+          // Calculate audio level for silence detection using gain-adjusted data
+          const audioLevel = this.calculateAudioLevel(gainAdjustedData);
           
           // Update last speech time if audio is detected
           if (audioLevel > 0.02) { // Threshold for speech detection
@@ -346,8 +361,8 @@ class GoogleSpeechService {
             }
           }
           
-          // Convert Float32Array to Int16Array (LINEAR16 format)
-          const linear16Data = this.convertFloat32ToInt16(inputData);
+          // Convert Float32Array to Int16Array (LINEAR16 format) using gain-adjusted data
+          const linear16Data = this.convertFloat32ToInt16(gainAdjustedData);
           
           this.processRawAudioChunk(linear16Data);
         }
@@ -456,6 +471,30 @@ class GoogleSpeechService {
   }
 
   /**
+   * Set microphone gain (0.0 to 2.0, where 1.0 is 100% - no adjustment)
+   * Can be adjusted in real-time during an ongoing stream
+   */
+  setMicrophoneGain(gain: number): void {
+    if (this.gainNode) {
+      // Clamp gain between 0.0 and 1.5
+      const clampedGain = Math.max(0.0, Math.min(1.5, gain));
+      // Use setValueAtTime for immediate, smooth gain changes
+      const currentTime = this.audioContext?.currentTime ?? 0;
+      this.gainNode.gain.setValueAtTime(clampedGain, currentTime);
+      console.log(`🎚️ Microphone gain set to: ${(clampedGain * 100).toFixed(0)}% (actual: ${this.gainNode.gain.value})`);
+    } else {
+      console.warn('⚠️ Cannot set gain - gainNode not initialized');
+    }
+  }
+
+  /**
+   * Get current microphone gain value
+   */
+  getMicrophoneGain(): number {
+    return this.gainNode?.gain.value ?? 1.0;
+  }
+
+  /**
    * Clean up resources
    */
   cleanup(): void {
@@ -485,6 +524,7 @@ class GoogleSpeechService {
     this.mediaRecorder = null;
     this.analyser = null;
     this.microphone = null;
+    this.gainNode = null;
     this.scriptProcessor = null;
     this.callbacks = null;
     this.socket = null;
@@ -673,9 +713,15 @@ class GoogleSpeechService {
       }
       const rms = Math.sqrt(sum / timeData.length);
       
-      // Normalize to 0-1 range
-      // Mobile devices may have different baseline levels, so we adjust the threshold
-      const normalizedLevel = Math.min(1, rms * 2); // Scale up for better sensitivity
+      // Normalize to 0-1 range with higher sensitivity
+      // Apply gain multiplier to show the effective amplified level
+      const currentGain = this.gainNode?.gain.value ?? 1.0;
+      const gainAdjustedRMS = rms * currentGain;
+      
+      // Scale up for better sensitivity (increased from 2 to 5)
+      // Apply non-linear scaling (square root) to make lower levels more visible
+      const scaledLevel = Math.min(1, gainAdjustedRMS * 5);
+      const normalizedLevel = Math.sqrt(scaledLevel); // Square root for better visual response
       
       // Call the callback with the audio level
       this.callbacks?.onAudioLevel?.(normalizedLevel);
