@@ -290,7 +290,6 @@ function InputApp() {
     if (tokens && user && user.userCode) {
       // Always sync the userCode from AuthContext to UserCodeContext
       if (userCode !== user.userCode) {
-        console.log('🔗 Syncing user code from', userCode, 'to', user.userCode)
         setUserCode(user.userCode)
       }
     }
@@ -312,13 +311,11 @@ function InputApp() {
 
   useEffect(() => {
     if (!tokens || !userCode) {
-      console.log('🔌 Socket: Missing tokens or userCode, not connecting')
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
       return
     }
 
-    console.log('🔌 Socket: Connecting to', CONFIG.BACKEND_URL, 'with userCode:', userCode, '(tokens available:', !!tokens, ')')
     setIsSocketConnecting(true)
     setIsSocketConnected(false)
 
@@ -347,7 +344,6 @@ function InputApp() {
     })
     
     socketRef.current.on('connect', () => {
-      console.log('🔌 Socket connected successfully with userCode:', userCode)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
       socketRef.current?.emit('getConnectionCount')
@@ -379,7 +375,6 @@ function InputApp() {
     })
 
     socketRef.current.on('disconnect', (reason) => {
-      console.log(`🔌 Socket disconnected: ${reason}`)
       setIsSocketConnecting(false)
       setIsSocketConnected(false)
       
@@ -399,14 +394,12 @@ function InputApp() {
     })
 
     socketRef.current.on('reconnect', async (attemptNumber) => {
-      console.log(`🔄 Reconnected after ${attemptNumber} attempts`)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
       
       // Re-initialize Google Speech Service with the reconnected socket
       try {
         await googleSpeechService.initialize(socketRef.current)
-        console.log('✅ Google Speech Service re-initialized after reconnect')
       } catch (error) {
         console.error('❌ Failed to re-initialize Google Speech Service:', error)
       }
@@ -429,7 +422,6 @@ function InputApp() {
     })
 
     socketRef.current.on('tokenExpired', (data) => {
-      console.log('🔌 Token expired, attempting refresh')
       if (tokens.refreshToken) {
         socketRef.current?.emit('refreshToken', {
           refreshToken: tokens.refreshToken
@@ -438,7 +430,6 @@ function InputApp() {
     })
 
     socketRef.current.on('tokenRefreshed', (data) => {
-      console.log('🔌 Socket token refreshed successfully')
       if (updateTokens) {
         updateTokens({
           accessToken: data.accessToken,
@@ -455,16 +446,13 @@ function InputApp() {
     })
 
     socketRef.current.on('pong', () => {
-      console.log('💓 Received pong from server')
     })
 
     // Listen for pre-emptive stream restart (overlap transition - 5 seconds before actual restart)
     // This gives us time to save pending transcription and wait for final result
     socketRef.current.on('streamRestartPending', (data: { reason: string, timestamp: number }) => {
-      console.log('⏳ InputApp: Stream restart PENDING event received, reason:', data.reason)
       const displayedText = currentTranscriptionRef.current
       if (displayedText && displayedText.trim()) {
-        console.log('💾 InputApp: Saving pending transcription, will promote after 3s if no final result')
         
         // Store pending transcription for potential promotion
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -482,7 +470,6 @@ function InputApp() {
         pendingPromotionTimeoutRef.current = setTimeout(() => {
           const pending = pendingTranscriptionRef.current
           if (pending && pending.text && pending.text.trim()) {
-            console.log('⏰ Promoting pending transcription after 3s timeout:', pending.text)
             
             const newBubble: MessageBubble = {
               id: pending.id,
@@ -520,7 +507,6 @@ function InputApp() {
     // Listen for stream restart events to save displayed interim text (fallback for error recovery)
     // This ensures no speech is lost when Google Cloud STT stream restarts
     socketRef.current.on('streamRestart', (data: { reason: string }) => {
-      console.log('🔄 InputApp: Stream restart event received, reason:', data.reason)
       
       // Clear any pending promotion since we're doing immediate save
       if (pendingPromotionTimeoutRef.current) {
@@ -531,7 +517,6 @@ function InputApp() {
       
       const displayedText = currentTranscriptionRef.current
       if (displayedText && displayedText.trim()) {
-        console.log('💾 InputApp: Saving displayed interim text before stream restart:', displayedText)
         // Save the displayed text as a final bubble
         const uniqueId = `stream-restart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         const newBubble: MessageBubble = {
@@ -567,7 +552,6 @@ function InputApp() {
 
     return () => {
       if (socketRef.current) {
-        console.log('🔌 Cleaning up socket connection')
         if ((socketRef.current as any).connectionCountInterval) {
           clearInterval((socketRef.current as any).connectionCountInterval)
         }
@@ -587,9 +571,12 @@ function InputApp() {
     if (isSocketConnected && socketRef.current) {
       googleSpeechService.initialize(socketRef.current)
         .then(() => {
-          setIsServiceReady(googleSpeechService.isReady())
+          const ready = googleSpeechService.isReady();
+          setIsServiceReady(ready);
           // Apply saved microphone gain after initialization
-          googleSpeechService.setMicrophoneGain(microphoneGain)
+          if (ready) {
+            googleSpeechService.setMicrophoneGain(microphoneGain);
+          }
         })
         .catch(error => {
           console.error('❌ Failed to initialize Google Speech Service:', error)
@@ -655,7 +642,6 @@ function InputApp() {
         
         // Don't create empty bubbles
         if (!result.transcript || !result.transcript.trim()) {
-          console.log('⚠️ Ignoring empty final result')
           setCurrentTranscription('')
           return
         }
@@ -664,7 +650,6 @@ function InputApp() {
         // Use a content hash to catch duplicates from overlapping streams
         const transcriptKey = result.transcript.trim().toLowerCase()
         if (processedTranscriptsRef.current.has(transcriptKey)) {
-          console.log('⚠️ Ignoring duplicate transcript:', result.transcript.substring(0, 30))
           setCurrentTranscription('')
           return
         }
@@ -713,7 +698,6 @@ function InputApp() {
 
   // Google Cloud Speech-to-Text handlers
   const startGoogleSpeechRecognition = useCallback(async () => {
-    console.log('🎤 startGoogleSpeechRecognition called, shouldBeListening:', shouldBeListening);
 
     try {
       // Check if Google Speech Service is ready
@@ -724,7 +708,6 @@ function InputApp() {
         if (isSocketConnected && socketRef.current) {
           try {
             await googleSpeechService.initialize(socketRef.current)
-            console.log('✅ Google Speech Service initialized successfully')
           } catch (initError) {
             console.error('❌ Failed to initialize Google Speech Service:', initError)
             setErrorMessage('Initializing speech recognition...')
@@ -732,7 +715,6 @@ function InputApp() {
             return
           }
         } else {
-          console.log('⏳ Socket not connected, waiting for connection...')
           setErrorMessage('Connecting to server...')
           setTimeout(() => setErrorMessage(null), 5000)
           return

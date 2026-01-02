@@ -29,7 +29,7 @@ class GoogleSpeechService {
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private microphone: MediaStreamAudioSourceNode | null = null;
-  private gainNode: GainNode | null = null; // Gain control for microphone input
+  private gainNode: GainNode | null = null;
   private stream: MediaStream | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
   private isRecording = false;
@@ -75,12 +75,10 @@ class GoogleSpeechService {
       const socketChanged = this.lastSocketId !== currentSocketId;
       
       if (this.socket === socket && !socketChanged) {
-        console.log('🔄 Google Speech Service already initialized with this socket, skipping...');
         return;
       }
       
       if (socketChanged) {
-        console.log(`🔄 Socket reconnected (${this.lastSocketId} -> ${currentSocketId}), reinitializing...`);
         // Reset recording state on reconnection so startRecognition can run again
         this.isRecording = false;
         this.isPaused = false;
@@ -111,13 +109,11 @@ class GoogleSpeechService {
         const isPreviousBubble = data.bubbleId === this.previousBubbleId;
         
         // Debug logging for transcription flow
-        console.log(`📝 transcriptionUpdate: "${data.transcript?.substring(0, 30)}..." isFinal=${data.isFinal}, bubbleId=${data.bubbleId?.substring(0, 15)}, current=${this.currentBubbleId?.substring(0, 15)}, match=${isCurrentBubble || isPreviousBubble}`);
         
         // For FINAL results: accept from current OR previous bubble (catch late finals)
         // For INTERIM results: ONLY accept from current bubble (prevents bouncing during restart)
         if (data.isFinal) {
           if (!isCurrentBubble && !isPreviousBubble) {
-            console.log(`⚠️ Ignoring final result for unknown bubble: ${data.bubbleId}`);
             return;
           }
           
@@ -142,7 +138,6 @@ class GoogleSpeechService {
         } else {
           // INTERIM results: only accept from current bubble to prevent bouncing
           if (!isCurrentBubble) {
-            console.log(`⚠️ Ignoring interim result from non-current bubble: ${data.bubbleId?.substring(0, 15)}`);
             return;
           }
           
@@ -175,7 +170,6 @@ class GoogleSpeechService {
       
       // Listen for stream restart notifications
       this.socket.on('streamRestarted', (data: any) => {
-        console.log('🔄 Stream restarted with new bubble ID:', data.newBubbleId);
         this.currentBubbleId = data.newBubbleId;
         this.hasReceivedFinalResult = false;
       });
@@ -183,13 +177,11 @@ class GoogleSpeechService {
       // Listen for PENDING stream restart - this is sent BEFORE the new stream starts
       // We MUST update bubbleId here so the new stream uses a different ID than the old stream
       this.socket.on('streamRestartPending', (data: any) => {
-        console.log('🔄 Stream restart pending:', data.reason);
         if (this.isRecording) {
           // Save current bubble ID as previous to allow late FINAL results to come through
           this.previousBubbleId = this.currentBubbleId;
           // Generate new bubble ID IMMEDIATELY so new stream uses different ID
           this.currentBubbleId = this.generateBubbleId();
-          console.log(`🔄 BubbleId updated: previous=${this.previousBubbleId?.substring(0, 15)}, new=${this.currentBubbleId?.substring(0, 15)}`);
           // DON'T clear currentTranscript here - InputApp handles saving the displayed text
           this.hasReceivedFinalResult = false;
         }
@@ -199,8 +191,6 @@ class GoogleSpeechService {
       // Note: InputApp.tsx handles saving displayed interim text on stream restart
       // This handler only manages internal state for the new stream
       this.socket.on('streamRestart', (data: any) => {
-        console.log('🔄 Backend requested stream restart:', data.reason);
-        console.log(`🔄 BEFORE restart: currentBubbleId=${this.currentBubbleId?.substring(0, 15)}, previousBubbleId=${this.previousBubbleId?.substring(0, 15)}`);
         if (this.isRecording) {
           // Note: We no longer save interim here - InputApp handles this to avoid duplicates
           // and ensure the displayed text (which may differ from internal state) is preserved
@@ -211,13 +201,11 @@ class GoogleSpeechService {
           this.currentBubbleId = this.generateBubbleId();
           this.currentTranscript = ''; // Reset for new bubble
           this.hasReceivedFinalResult = false;
-          console.log(`🔄 AFTER restart: currentBubbleId=${this.currentBubbleId?.substring(0, 15)}, previousBubbleId=${this.previousBubbleId?.substring(0, 15)}`);
         }
       });
       
       // Handle socket reconnection - process any queued messages
       this.socket.on('connect', () => {
-        console.log('🔗 GoogleSpeechService: Socket reconnected');
         // Process queued messages immediately after reconnection
         setTimeout(() => {
           this.processMessageQueue();
@@ -268,18 +256,42 @@ class GoogleSpeechService {
       this.analyser.fftSize = isMobileDevice ? 512 : 256;
       this.analyser.smoothingTimeConstant = isMobileDevice ? 0.7 : 0.8; // Less smoothing on mobile for faster response
       
-      // Create gain node for user-controlled microphone gain adjustment
+      // Create gain node for microphone volume control
       this.gainNode = this.audioContext.createGain();
-      this.gainNode.gain.value = 1.0; // Default gain (100% - no adjustment)
+      this.gainNode.gain.value = 1.0; // Default: 100% (no adjustment)
       
-      // Connect audio chain: microphone -> gainNode -> analyser
+      // Set up audio chain: microphone -> gain -> analyser
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       this.microphone.connect(this.gainNode);
       this.gainNode.connect(this.analyser);
 
+      // Verify all components are set up correctly
+      if (!this.stream || !this.audioContext || !this.socket) {
+        const missing: string[] = [];
+        if (!this.stream) missing.push('stream');
+        if (!this.audioContext) missing.push('audioContext');
+        if (!this.socket) missing.push('socket');
+        throw new Error(`Failed to initialize: missing ${missing.join(', ')}`);
+      }
+
+
     } catch (error) {
       console.error('❌ Failed to initialize Google Speech Service:', error);
-      throw new Error('Failed to access microphone. Please ensure microphone permissions are granted.');
+      // Clean up any partially initialized state
+      if (this.stream) {
+        this.stream.getTracks().forEach(track => track.stop());
+        this.stream = null;
+      }
+      if (this.audioContext) {
+        this.audioContext.close().catch(() => {});
+        this.audioContext = null;
+      }
+      this.analyser = null;
+      this.microphone = null;
+      this.gainNode = null;
+      
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to access microphone: ${errorMessage}. Please ensure microphone permissions are granted.`);
     }
   }
 
@@ -328,8 +340,15 @@ class GoogleSpeechService {
         this.scriptProcessor = this.audioContext!.createScriptProcessor(bufferSize, 1, 1);
       }
       
-      // Connect gain node to script processor (gain node is already connected to microphone)
-      this.gainNode!.connect(this.scriptProcessor);
+      // Connect audio chain: microphone -> gain -> script processor
+      // The gain node is already connected to analyser, so we need to create a separate connection
+      // for the script processor. We'll connect gain -> script processor
+      if (this.gainNode) {
+        this.gainNode.connect(this.scriptProcessor);
+      } else {
+        // Fallback if gain node doesn't exist (shouldn't happen, but safety check)
+        this.microphone!.connect(this.scriptProcessor);
+      }
       // Connect to destination to keep the audio processing active (required on some mobile browsers)
       this.scriptProcessor.connect(this.audioContext!.destination);
       
@@ -339,16 +358,8 @@ class GoogleSpeechService {
           const inputBuffer = event.inputBuffer;
           const inputData = inputBuffer.getChannelData(0); // Get mono channel
           
-          // Apply gain manually (create a copy to avoid modifying the input buffer)
-          // The gain node should already apply it, but we'll apply it again here to ensure it works
-          const currentGain = this.gainNode?.gain.value ?? 1.0;
-          const gainAdjustedData = new Float32Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            gainAdjustedData[i] = inputData[i] * currentGain;
-          }
-          
-          // Calculate audio level for silence detection using gain-adjusted data
-          const audioLevel = this.calculateAudioLevel(gainAdjustedData);
+          // Calculate audio level for silence detection BEFORE processing
+          const audioLevel = this.calculateAudioLevel(inputData);
           
           // Update last speech time if audio is detected
           if (audioLevel > 0.02) { // Threshold for speech detection
@@ -361,8 +372,8 @@ class GoogleSpeechService {
             }
           }
           
-          // Convert Float32Array to Int16Array (LINEAR16 format) using gain-adjusted data
-          const linear16Data = this.convertFloat32ToInt16(gainAdjustedData);
+          // Convert Float32Array to Int16Array (LINEAR16 format)
+          const linear16Data = this.convertFloat32ToInt16(inputData);
           
           this.processRawAudioChunk(linear16Data);
         }
@@ -443,6 +454,21 @@ class GoogleSpeechService {
   }
 
   /**
+   * Set microphone gain (volume adjustment)
+   * @param gain Gain value from 0.0 to 1.5 (1.0 = 100%, no adjustment)
+   */
+  setMicrophoneGain(gain: number): void {
+    if (!this.gainNode) {
+      console.warn('⚠️ Cannot set microphone gain: gain node not initialized');
+      return;
+    }
+    
+    // Clamp gain value to valid range
+    const clampedGain = Math.max(0.0, Math.min(1.5, gain));
+    this.gainNode.gain.value = clampedGain;
+  }
+
+  /**
    * Update configuration
    */
   updateConfig(newConfig: Partial<SpeechRecognitionConfig>): void {
@@ -471,34 +497,9 @@ class GoogleSpeechService {
   }
 
   /**
-   * Set microphone gain (0.0 to 2.0, where 1.0 is 100% - no adjustment)
-   * Can be adjusted in real-time during an ongoing stream
-   */
-  setMicrophoneGain(gain: number): void {
-    if (this.gainNode) {
-      // Clamp gain between 0.0 and 1.5
-      const clampedGain = Math.max(0.0, Math.min(1.5, gain));
-      // Use setValueAtTime for immediate, smooth gain changes
-      const currentTime = this.audioContext?.currentTime ?? 0;
-      this.gainNode.gain.setValueAtTime(clampedGain, currentTime);
-      console.log(`🎚️ Microphone gain set to: ${(clampedGain * 100).toFixed(0)}% (actual: ${this.gainNode.gain.value})`);
-    } else {
-      console.warn('⚠️ Cannot set gain - gainNode not initialized');
-    }
-  }
-
-  /**
-   * Get current microphone gain value
-   */
-  getMicrophoneGain(): number {
-    return this.gainNode?.gain.value ?? 1.0;
-  }
-
-  /**
    * Clean up resources
    */
   cleanup(): void {
-    console.log('🧹 Cleaning up Google Speech Service...');
     
     this.stopRecognition();
     this.clearTimers();
@@ -524,7 +525,6 @@ class GoogleSpeechService {
     this.mediaRecorder = null;
     this.analyser = null;
     this.microphone = null;
-    this.gainNode = null;
     this.scriptProcessor = null;
     this.callbacks = null;
     this.socket = null;
@@ -539,8 +539,10 @@ class GoogleSpeechService {
     const int16Array = new Int16Array(float32Array.length);
     for (let i = 0; i < float32Array.length; i++) {
       // Convert from [-1, 1] range to [-32768, 32767] range
+      // Clamp to prevent clipping and ensure clean audio
       const sample = Math.max(-1, Math.min(1, float32Array[i]));
-      int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      // Use proper scaling to avoid distortion
+      int16Array[i] = Math.round(sample < 0 ? sample * 0x8000 : sample * 0x7FFF);
     }
     return int16Array;
   }
@@ -567,7 +569,6 @@ class GoogleSpeechService {
       
       // If no audio sent in 5 seconds, send a silent audio frame
       if (timeSinceLastAudio > 5000) {
-        console.log('🔇 Sending keep-alive silent audio frame');
         // Create a small silent audio buffer (256 samples of silence)
         const silentAudio = new Int16Array(256);
         this.sendRawAudioChunk(silentAudio);
@@ -618,7 +619,6 @@ class GoogleSpeechService {
   }
 
   private processAudioChunk(audioBlob: Blob): void {
-    console.log(`🎤 Frontend: Processing chunk immediately, size: ${audioBlob.size} bytes`);
     
     // Send chunk immediately for real-time streaming
     if (audioBlob.size > 0) {
@@ -638,7 +638,6 @@ class GoogleSpeechService {
       const arrayBuffer = reader.result as ArrayBuffer;
       const base64Audio = this.arrayBufferToBase64(arrayBuffer);
       
-      console.log(`🎤 Frontend: Sending chunk immediately - Size: ${base64Audio.length} chars, Bubble ID: ${this.currentBubbleId}, speechEndTimeout: ${this.config.speechEndTimeout}s`);
       
       this.socket.emit('googleSpeechTranscription', {
         audioData: base64Audio,
@@ -707,21 +706,31 @@ class GoogleSpeechService {
       
       // Calculate RMS from time domain (more accurate for silence detection)
       let sum = 0;
+      let peak = 0;
       for (let i = 0; i < timeData.length; i++) {
         const normalized = (timeData[i] - 128) / 128; // Normalize to -1 to 1
+        const absValue = Math.abs(normalized);
         sum += normalized * normalized;
+        peak = Math.max(peak, absValue); // Track peak for better visual feedback
       }
       const rms = Math.sqrt(sum / timeData.length);
       
-      // Normalize to 0-1 range with higher sensitivity
-      // Apply gain multiplier to show the effective amplified level
-      const currentGain = this.gainNode?.gain.value ?? 1.0;
-      const gainAdjustedRMS = rms * currentGain;
+      // Use a combination of RMS and peak for responsive visualization
+      // RMS gives average level, peak gives instant responsiveness
+      const combinedLevel = (rms * 0.7 + peak * 0.3);
       
-      // Scale up for better sensitivity (increased from 2 to 5)
-      // Apply non-linear scaling (square root) to make lower levels more visible
-      const scaledLevel = Math.min(1, gainAdjustedRMS * 5);
-      const normalizedLevel = Math.sqrt(scaledLevel); // Square root for better visual response
+      // Apply moderate scaling for visual feedback
+      // Speech typically ranges from 0.05 to 0.3 RMS
+      // Using a power curve for smoother response
+      let scaledLevel = Math.pow(Math.min(1, combinedLevel * 6), 0.7);
+      
+      // Slight boost for very quiet signals
+      if (combinedLevel > 0.02) {
+        scaledLevel = Math.max(scaledLevel, 0.05); // Minimum visible level for quiet speech
+      }
+      
+      // Apply final normalization
+      const normalizedLevel = Math.min(1, scaledLevel * 1.2);
       
       // Call the callback with the audio level
       this.callbacks?.onAudioLevel?.(normalizedLevel);
@@ -755,7 +764,6 @@ class GoogleSpeechService {
         
         // Only finalize if we have a transcript and silence has been detected
         if (silenceDuration > silenceTimeout && this.currentTranscript.trim()) {
-          console.log(`🔇 Silence detected (${Math.round(silenceDuration / 1000)}s), finalizing transcript`);
           
           // Create a final result from the current transcript
           if (this.callbacks?.onFinalResult) {
@@ -809,13 +817,11 @@ class GoogleSpeechService {
    */
   private sendWithRetry(event: string, data: any): void {
     if (!this.socket) {
-      console.log('📦 No socket available, queuing message');
       this.queueMessage(event, data);
       return;
     }
     
     if (!this.socket.connected) {
-      console.log('📦 Socket not connected, queuing message and attempting reconnection');
       this.queueMessage(event, data);
       // Try to reconnect the socket
       try {
