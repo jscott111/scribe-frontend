@@ -239,29 +239,12 @@ export enum GoogleSTTLanguageCode {
   // Somali
   SO_SO = 'so-SO',           // Somali (Somalia)
 
-  // Spanish variants
-  ES_AR = 'es-AR',           // Spanish (Argentina)
-  ES_BO = 'es-BO',           // Spanish (Bolivia)
-  ES_CL = 'es-CL',           // Spanish (Chile)
+  // Spanish variants - Only officially supported variants from Google Cloud documentation
+  ES_419 = 'es-419',         // Spanish (Latin America) - BCP-47 code for Latin America
   ES_CO = 'es-CO',           // Spanish (Colombia)
-  ES_CR = 'es-CR',           // Spanish (Costa Rica)
-  ES_CU = 'es-CU',           // Spanish (Cuba)
-  ES_DO = 'es-DO',           // Spanish (Dominican Republic)
-  ES_EC = 'es-EC',           // Spanish (Ecuador)
-  ES_SV = 'es-SV',           // Spanish (El Salvador)
-  ES_GQ = 'es-GQ',           // Spanish (Equatorial Guinea)
-  ES_GT = 'es-GT',           // Spanish (Guatemala)
-  ES_HN = 'es-HN',           // Spanish (Honduras)
-  ES_MX = 'es-MX',           // Spanish (Mexico)
-  ES_NI = 'es-NI',           // Spanish (Nicaragua)
-  ES_PA = 'es-PA',           // Spanish (Panama)
-  ES_PY = 'es-PY',           // Spanish (Paraguay)
-  ES_PE = 'es-PE',           // Spanish (Peru)
-  ES_PR = 'es-PR',           // Spanish (Puerto Rico)
   ES_ES = 'es-ES',           // Spanish (Spain)
+  ES_MX = 'es-MX',           // Spanish (Mexico)
   ES_US = 'es-US',           // Spanish (United States)
-  ES_UY = 'es-UY',           // Spanish (Uruguay)
-  ES_VE = 'es-VE',           // Spanish (Venezuela)
 
   // Sundanese
   SU_ID = 'su-ID',           // Sundanese (Indonesia)
@@ -563,29 +546,12 @@ export const GOOGLE_STT_LANGUAGE_METADATA: Record<GoogleSTTLanguageCode, STTLang
   // Somali
   [GoogleSTTLanguageCode.SO_SO]: { name: 'Somali', nativeName: 'Soomaali', flag: '🇸🇴', region: 'Somalia', models: ['chirp_2'] },
 
-  // Spanish variants
-  [GoogleSTTLanguageCode.ES_AR]: { name: 'Spanish (Argentina)', nativeName: 'Español', flag: '🇦🇷', region: 'Argentina', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_BO]: { name: 'Spanish (Bolivia)', nativeName: 'Español', flag: '🇧🇴', region: 'Bolivia', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_CL]: { name: 'Spanish (Chile)', nativeName: 'Español', flag: '🇨🇱', region: 'Chile', models: ['chirp_2', 'chirp_3'] },
+  // Spanish variants - Only officially supported variants from Google Cloud documentation
+  [GoogleSTTLanguageCode.ES_419]: { name: 'Spanish (Latin America)', nativeName: 'Español', flag: '🌎', region: 'Latin America', models: ['chirp_2', 'chirp_3'] },
   [GoogleSTTLanguageCode.ES_CO]: { name: 'Spanish (Colombia)', nativeName: 'Español', flag: '🇨🇴', region: 'Colombia', models: ['chirp_2', 'chirp_3', 'telephony'] },
-  [GoogleSTTLanguageCode.ES_CR]: { name: 'Spanish (Costa Rica)', nativeName: 'Español', flag: '🇨🇷', region: 'Costa Rica', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_CU]: { name: 'Spanish (Cuba)', nativeName: 'Español', flag: '🇨🇺', region: 'Cuba', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_DO]: { name: 'Spanish (Dominican Republic)', nativeName: 'Español', flag: '🇩🇴', region: 'Dominican Republic', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_EC]: { name: 'Spanish (Ecuador)', nativeName: 'Español', flag: '🇪🇨', region: 'Ecuador', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_SV]: { name: 'Spanish (El Salvador)', nativeName: 'Español', flag: '🇸🇻', region: 'El Salvador', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_GQ]: { name: 'Spanish (Equatorial Guinea)', nativeName: 'Español', flag: '🇬🇶', region: 'Equatorial Guinea', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_GT]: { name: 'Spanish (Guatemala)', nativeName: 'Español', flag: '🇬🇹', region: 'Guatemala', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_HN]: { name: 'Spanish (Honduras)', nativeName: 'Español', flag: '🇭🇳', region: 'Honduras', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_MX]: { name: 'Spanish (Mexico)', nativeName: 'Español', flag: '🇲🇽', region: 'Mexico', models: ['chirp_2', 'chirp_3', 'telephony'] },
-  [GoogleSTTLanguageCode.ES_NI]: { name: 'Spanish (Nicaragua)', nativeName: 'Español', flag: '🇳🇮', region: 'Nicaragua', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_PA]: { name: 'Spanish (Panama)', nativeName: 'Español', flag: '🇵🇦', region: 'Panama', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_PY]: { name: 'Spanish (Paraguay)', nativeName: 'Español', flag: '🇵🇾', region: 'Paraguay', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_PE]: { name: 'Spanish (Peru)', nativeName: 'Español', flag: '🇵🇪', region: 'Peru', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_PR]: { name: 'Spanish (Puerto Rico)', nativeName: 'Español', flag: '🇵🇷', region: 'Puerto Rico', models: ['chirp_2', 'chirp_3'] },
   [GoogleSTTLanguageCode.ES_ES]: { name: 'Spanish (Spain)', nativeName: 'Español', flag: '🇪🇸', region: 'Spain', models: ['chirp_2', 'chirp_3', 'long'] },
+  [GoogleSTTLanguageCode.ES_MX]: { name: 'Spanish (Mexico)', nativeName: 'Español', flag: '🇲🇽', region: 'Mexico', models: ['chirp_2', 'chirp_3', 'telephony'] },
   [GoogleSTTLanguageCode.ES_US]: { name: 'Spanish (US)', nativeName: 'Español', flag: '🇺🇸', region: 'United States', models: ['chirp_2', 'chirp_3', 'long', 'short', 'telephony'] },
-  [GoogleSTTLanguageCode.ES_UY]: { name: 'Spanish (Uruguay)', nativeName: 'Español', flag: '🇺🇾', region: 'Uruguay', models: ['chirp_2', 'chirp_3'] },
-  [GoogleSTTLanguageCode.ES_VE]: { name: 'Spanish (Venezuela)', nativeName: 'Español', flag: '🇻🇪', region: 'Venezuela', models: ['chirp_2', 'chirp_3'] },
 
   // Sundanese
   [GoogleSTTLanguageCode.SU_ID]: { name: 'Sundanese', nativeName: 'Basa Sunda', flag: '🇮🇩', region: 'Indonesia', models: ['chirp_2'] },

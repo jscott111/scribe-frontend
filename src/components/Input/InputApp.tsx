@@ -175,6 +175,10 @@ function InputApp() {
 
   // Handle source language change and save to cookie
   const handleSourceLanguageChange = (language: GoogleSTTLanguageCode) => {
+    // If language changed while recording, clear current transcript to prevent mixing
+    if (sourceLanguage !== language && isTranslating) {
+      setCurrentTranscription('')
+    }
     setSourceLanguage(language)
     setCookie('scribe-source-language', language, {
       maxAge: 365 * 24 * 60 * 60, // 1 year
@@ -268,7 +272,6 @@ function InputApp() {
   const sourceLanguageRef = React.useRef<string>('en-CA') // Ref to track source language for stream restart handler
   const pendingTranscriptionRef = React.useRef<{ id: string; text: string; sourceLanguage: string; timestamp: number } | null>(null) // For pending transcription during overlap
   const pendingPromotionTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null) // Timeout to promote pending transcription
-  const processedTranscriptsRef = React.useRef<Set<string>>(new Set()) // Track processed transcripts to prevent duplicates during stream overlap
   const { user, tokens, logout, updateTokens, getConnectionInfo } = useAuth()
   const { userCode, setUserCode, clearUserCode } = useUserCode()
   const theme = useTheme()
@@ -644,22 +647,6 @@ function InputApp() {
         if (!result.transcript || !result.transcript.trim()) {
           setCurrentTranscription('')
           return
-        }
-        
-        // Deduplication: Check if we've already processed this transcript
-        // Use a content hash to catch duplicates from overlapping streams
-        const transcriptKey = result.transcript.trim().toLowerCase()
-        if (processedTranscriptsRef.current.has(transcriptKey)) {
-          setCurrentTranscription('')
-          return
-        }
-        
-        // Mark as processed (with cleanup of old entries)
-        processedTranscriptsRef.current.add(transcriptKey)
-        // Keep set size reasonable - remove old entries if too large
-        if (processedTranscriptsRef.current.size > 50) {
-          const entries = Array.from(processedTranscriptsRef.current)
-          entries.slice(0, 25).forEach(key => processedTranscriptsRef.current.delete(key))
         }
         
         const uniqueId = `${result.bubbleId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;

@@ -53,6 +53,7 @@ class GoogleSpeechService {
   private silenceDetectionInterval: NodeJS.Timeout | null = null; // For silence-based finalization
   private lastSpeechTime: number = 0; // Track when speech was last detected
   private silenceStartTime: number | null = null; // Track when silence started
+  private lastInterimResultTime: number = 0; // Track when we last received an interim result from Google Cloud
 
   constructor() {
     this.config = {
@@ -148,6 +149,7 @@ class GoogleSpeechService {
             this.currentWordCount = data.transcript.trim().split(/\s+/).filter(w => w.length > 0).length;
             // Reset silence detection when we get new interim results (speech is active)
             this.lastSpeechTime = Date.now();
+            this.lastInterimResultTime = Date.now(); // Track when we last got an interim result
             this.silenceStartTime = null;
             
             this.callbacks.onInterimResult({
@@ -161,7 +163,7 @@ class GoogleSpeechService {
         }
       });
       
-      // Listen for final result notifications to prevent duplicate finalization
+      // Listen for final result notifications
       this.socket.on('finalResultReceived', (data: any) => {
         if (data.bubbleId === this.currentBubbleId) {
           this.hasReceivedFinalResult = true;
@@ -187,20 +189,37 @@ class GoogleSpeechService {
         }
       });
       
-      // Listen for stream restart requests from backend (for error recovery)
+      // Listen for stream restart requests from backend (for error recovery or language change)
       // Note: InputApp.tsx handles saving displayed interim text on stream restart
       // This handler only manages internal state for the new stream
       this.socket.on('streamRestart', (data: any) => {
         if (this.isRecording) {
-          // Note: We no longer save interim here - InputApp handles this to avoid duplicates
-          // and ensure the displayed text (which may differ from internal state) is preserved
-          
-          // Save current bubble ID as previous to allow late results to come through
-          this.previousBubbleId = this.currentBubbleId;
-          // Generate new bubble ID and continue recording
-          this.currentBubbleId = this.generateBubbleId();
-          this.currentTranscript = ''; // Reset for new bubble
-          this.hasReceivedFinalResult = false;
+          // If restart is due to language change, clear everything immediately
+          if (data.reason === 'language_changed') {
+            // Clear all state for language change
+            this.currentTranscript = '';
+            this.previousBubbleId = null; // Don't accept late results from old language
+            this.currentBubbleId = this.generateBubbleId();
+            this.hasReceivedFinalResult = false;
+            // Clear the displayed transcript via callback
+            if (this.callbacks?.onInterimResult) {
+              this.callbacks.onInterimResult({
+                transcript: '',
+                isFinal: false,
+                confidence: 0,
+                wordCount: 0,
+                bubbleId: this.currentBubbleId
+              });
+            }
+          } else {
+            // For other restart reasons, save current state
+            // Save current bubble ID as previous to allow late results to come through
+            this.previousBubbleId = this.currentBubbleId;
+            // Generate new bubble ID and continue recording
+            this.currentBubbleId = this.generateBubbleId();
+            this.currentTranscript = ''; // Reset for new bubble
+            this.hasReceivedFinalResult = false;
+          }
         }
       });
       
@@ -316,6 +335,7 @@ class GoogleSpeechService {
     this.currentWordCount = 0;
     this.currentTranscript = '';
     this.hasReceivedFinalResult = false;
+    this.lastInterimResultTime = Date.now(); // Initialize to current time when starting recognition
 
     try {
       // Use modern AudioWorklet if available, fallback to ScriptProcessorNode
@@ -472,7 +492,26 @@ class GoogleSpeechService {
    * Update configuration
    */
   updateConfig(newConfig: Partial<SpeechRecognitionConfig>): void {
+    const languageChanged = newConfig.languageCode && newConfig.languageCode !== this.config.languageCode;
     this.config = { ...this.config, ...newConfig };
+    
+    // If language changed while recording, clear everything and generate new bubble ID
+    if (languageChanged && this.isRecording) {
+      this.currentTranscript = '';
+      this.previousBubbleId = null; // Don't accept late results from old language
+      this.currentBubbleId = this.generateBubbleId();
+      this.hasReceivedFinalResult = false;
+      // Clear the displayed transcript immediately
+      if (this.callbacks?.onInterimResult) {
+        this.callbacks.onInterimResult({
+          transcript: '',
+          isFinal: false,
+          confidence: 0,
+          wordCount: 0,
+          bubbleId: this.currentBubbleId
+        });
+      }
+    }
   }
 
   /**
@@ -759,29 +798,58 @@ class GoogleSpeechService {
       const silenceTimeout = this.config.speechEndTimeout * 1000; // Convert to milliseconds
       
       // If we've been silent for longer than the timeout, finalize the current transcript
+      // BUT only if we haven't received an interim result recently (Google Cloud might still be processing)
+      const timeSinceLastInterim = now - this.lastInterimResultTime;
+      const MIN_TIME_SINCE_INTERIM = 2000; // Wait at least 2 seconds after last interim result
+      
       if (this.silenceStartTime !== null && timeSinceLastSpeech > silenceTimeout) {
         const silenceDuration = now - this.silenceStartTime;
         
-        // Only finalize if we have a transcript and silence has been detected
-        if (silenceDuration > silenceTimeout && this.currentTranscript.trim()) {
+        // Only finalize if:
+        // 1. We have a transcript and silence has been detected
+        // 2. We haven't received an interim result recently (Google Cloud might still be processing)
+        // 3. We haven't already received a final result from Google Cloud
+        if (silenceDuration > silenceTimeout && 
+            this.currentTranscript.trim() && 
+            timeSinceLastInterim > MIN_TIME_SINCE_INTERIM &&
+            !this.hasReceivedFinalResult) {
+          const finalTranscript = this.currentTranscript.trim();
+          const finalBubbleId = this.currentBubbleId || this.generateBubbleId();
+          
+          // Send final transcript to backend
+          if (this.socket && this.socket.connected) {
+            this.socket.emit('googleSpeechTranscription', {
+              audioData: '', // No audio data for final-only message
+              sourceLanguage: this.config.languageCode,
+              bubbleId: finalBubbleId,
+              isFinal: true,
+              interimTranscript: '',
+              finalTranscript: finalTranscript,
+              wordCount: this.currentWordCount,
+              maxWordsPerBubble: this.config.maxWordsPerBubble,
+              audioFormat: 'LINEAR16',
+              sampleRate: 48000
+            });
+          }
           
           // Create a final result from the current transcript
           if (this.callbacks?.onFinalResult) {
             this.callbacks.onFinalResult({
-              transcript: this.currentTranscript.trim(),
+              transcript: finalTranscript,
               isFinal: true,
               confidence: 0.8, // Default confidence for silence-triggered finalization
               wordCount: this.currentWordCount,
-              bubbleId: this.currentBubbleId || this.generateBubbleId()
+              bubbleId: finalBubbleId
             });
-            
-            // Reset state
-            this.currentTranscript = '';
-            this.currentBubbleId = this.generateBubbleId();
-            this.currentWordCount = 0;
-            this.lastSpeechTime = Date.now();
-            this.silenceStartTime = null;
           }
+          
+          // Reset state
+          this.currentTranscript = '';
+          this.currentBubbleId = this.generateBubbleId();
+          this.currentWordCount = 0;
+          this.lastSpeechTime = Date.now();
+          this.silenceStartTime = null;
+          this.hasReceivedFinalResult = false;
         }
       }
     };
