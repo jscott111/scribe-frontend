@@ -408,16 +408,11 @@ function InputApp() {
       setIsSocketConnected(false)
     })
 
-    socketRef.current.on('reconnect', async (attemptNumber) => {
+    socketRef.current.on('reconnect', (attemptNumber) => {
+      console.log(`🔄 InputApp reconnected after ${attemptNumber} attempts`)
       setIsSocketConnecting(false)
       setIsSocketConnected(true)
-      
-      // Re-initialize Google Speech Service with the reconnected socket
-      try {
-        await googleSpeechService.initialize(socketRef.current)
-      } catch (error) {
-        console.error('❌ Failed to re-initialize Google Speech Service:', error)
-      }
+      // Note: googleSpeechService will be re-initialized via the isSocketConnected useEffect
     })
 
     socketRef.current.on('reconnect_error', (error) => {
@@ -612,15 +607,23 @@ function InputApp() {
   // Cleanup Google Speech Service on unmount
   useEffect(() => {
     return () => {
+      console.log('🔗 InputApp - Final cleanup on unmount')
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current)
+      }
+      if (pendingPromotionTimeoutRef.current) {
+        clearTimeout(pendingPromotionTimeoutRef.current)
       }
       if (socketRef.current) {
         socketRef.current.removeAllListeners()
         if ((socketRef.current as any).connectionCountInterval) {
           clearInterval((socketRef.current as any).connectionCountInterval)
         }
+        if ((socketRef.current as any).heartbeatInterval) {
+          clearInterval((socketRef.current as any).heartbeatInterval)
+        }
         socketRef.current.disconnect()
+        socketRef.current = null
       }
       googleSpeechService.cleanup()
     }

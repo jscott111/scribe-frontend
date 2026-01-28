@@ -546,9 +546,15 @@ class GoogleSpeechService {
     this.stopKeepAlive();
     this.stopSilenceDetection();
 
-    // Notify backend to stop streaming
+    // Clean up socket listeners and notify backend
     if (this.socket) {
       this.socket.emit('stopStreaming');
+      // Remove listeners added by this service
+      this.socket.removeAllListeners('transcriptionUpdate');
+      this.socket.removeAllListeners('finalResultReceived');
+      this.socket.removeAllListeners('streamRestarted');
+      this.socket.removeAllListeners('streamRestartPending');
+      this.socket.removeAllListeners('streamRestart');
     }
 
     if (this.stream) {
@@ -567,6 +573,7 @@ class GoogleSpeechService {
     this.scriptProcessor = null;
     this.callbacks = null;
     this.socket = null;
+    this.lastSocketId = null;
     this.hasReceivedFinalResult = false;
   }
 
@@ -668,6 +675,29 @@ class GoogleSpeechService {
   private sendAudioChunkImmediately(audioBlob: Blob): void {
     if (!this.socket) {
       console.error('❌ No socket connection available');
+      return;
+    }
+
+    if (!this.socket.connected) {
+      console.warn('⚠️ Socket not connected, queueing audio chunk');
+      // Queue the message for later delivery
+      const reader = new FileReader();
+      reader.onload = () => {
+        const arrayBuffer = reader.result as ArrayBuffer;
+        const base64Audio = this.arrayBufferToBase64(arrayBuffer);
+        this.queueMessage('googleSpeechTranscription', {
+          audioData: base64Audio,
+          sourceLanguage: this.config.languageCode,
+          bubbleId: this.currentBubbleId,
+          isFinal: false,
+          interimTranscript: this.currentTranscript,
+          finalTranscript: '',
+          wordCount: this.currentWordCount,
+          maxWordsPerBubble: this.config.maxWordsPerBubble,
+          speechEndTimeout: this.config.speechEndTimeout,
+        });
+      };
+      reader.readAsArrayBuffer(audioBlob);
       return;
     }
 

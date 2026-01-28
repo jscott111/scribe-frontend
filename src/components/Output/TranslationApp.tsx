@@ -493,11 +493,11 @@ function TranslationApp() {
   }, []) // Remove dependencies to avoid infinite loop
 
   useEffect(() => {
-    console.log('🔗 TranslationApp - Connecting with userCode:', userCode, 'targetLanguage:', targetLanguage)
+    console.log('🔗 TranslationApp - Connecting with userCode:', userCode)
     
-    // Only connect if we have both a user code and target language
-    if (!targetLanguage || !userCode) {
-      console.log('🔗 TranslationApp - Not connecting: missing userCode or targetLanguage')
+    // Only connect if we have a user code
+    if (!userCode) {
+      console.log('🔗 TranslationApp - Not connecting: missing userCode')
       setIsConnecting(false)
       setIsConnected(false)
       return
@@ -505,6 +505,17 @@ function TranslationApp() {
 
     setIsConnecting(true)
     setIsConnected(false)
+
+    // Clean up existing socket before creating a new one
+    if (socketRef.current) {
+      console.log('🔗 TranslationApp - Cleaning up existing socket before reconnecting')
+      socketRef.current.removeAllListeners()
+      if ((socketRef.current as any).heartbeatInterval) {
+        clearInterval((socketRef.current as any).heartbeatInterval)
+      }
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
 
     socketRef.current = io(CONFIG.BACKEND_URL, {
       auth: {
@@ -656,12 +667,6 @@ function TranslationApp() {
       }
     })
     
-    socketRef.current.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error)
-      setIsConnecting(false)
-      setIsConnected(false)
-    })
-
     socketRef.current.on('reconnect', (attemptNumber) => {
       console.log(`🔄 TranslationApp reconnected after ${attemptNumber} attempts`)
       setIsConnecting(false)
@@ -698,16 +703,19 @@ function TranslationApp() {
     })
 
     return () => {
+      console.log('🔗 TranslationApp - Cleaning up socket connection')
       if (socketRef.current) {
+        socketRef.current.removeAllListeners()
         if ((socketRef.current as any).heartbeatInterval) {
           clearInterval((socketRef.current as any).heartbeatInterval)
         }
         socketRef.current.disconnect()
+        socketRef.current = null
       }
       setIsConnecting(false)
       setIsConnected(false)
     }
-  }, [targetLanguage, userCode]) // Removed showLanguageSelection - we don't need to reconnect when it changes
+  }, [userCode]) // Only reconnect when userCode changes - targetLanguage changes are handled via emit
 
   useEffect(() => {
     if (socketRef.current && isConnected && targetLanguage && !showLanguageSelection) {
