@@ -5,7 +5,7 @@ import OutputLanguageSelector from '../OutputLanguageSelector'
 import { GoogleCTLanguageCode, getCTLanguageInfo, isValidCTLanguageCode } from '../../enums/googleCTLangs'
 import { isTTSSupported } from '../../enums/googleTTSLangs'
 import { io, Socket } from 'socket.io-client'
-import styled from 'styled-components'
+import styled, { keyframes } from 'styled-components'
 import { CONFIG } from '../../config/urls'
 import { useUserCode } from '../../contexts/SessionContext'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -131,6 +131,28 @@ const RightPanel = styled(Paper)<{ isMobile: boolean }>`
   overflow: hidden;
 `
 
+const bubbleEnter = keyframes`
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+`
+
+const TypingIndicatorSlot = styled.div<{ $active: boolean }>`
+  overflow: hidden;
+  max-height: ${props => (props.$active ? '4rem' : '0')};
+  opacity: ${props => (props.$active ? 1 : 0)};
+  transition: max-height 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.3s ease;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+`
+
 const MessageBubble = styled(Paper)<{ isRTL?: boolean }>`
   padding: 0.75rem 1rem;
   border-radius: 2rem !important;
@@ -139,6 +161,7 @@ const MessageBubble = styled(Paper)<{ isRTL?: boolean }>`
   align-self: flex-end;
   text-align: ${props => props.isRTL ? 'right' : 'left'};
   direction: ${props => props.isRTL ? 'rtl' : 'ltr'};
+  animation: ${bubbleEnter} 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 `
 
 const BubblesContainer = styled.div`
@@ -1022,15 +1045,15 @@ function TranslationApp() {
       <RightPanel elevation={3} isMobile={isMobile}>
         <RightPanelContent isMobile={isMobile}>
           <BubblesContainer>
-            {isSpeakerTyping && (
-              <MessageBubble 
-                elevation={1} 
+            <TypingIndicatorSlot $active={isSpeakerTyping}>
+              <MessageBubble
+                elevation={1}
                 isRTL={isRTLLanguage(targetLanguage)}
-                sx={{ opacity: 0.7 }}
+                sx={{ opacity: 0.7, animation: 'none' }}
               >
                 <TypingIndicator visible={true} />
               </MessageBubble>
-            )}
+            </TypingIndicatorSlot>
             {translationBubbles.length === 0 ? (
               <EmptyState>
                 <Typography variant="sectionHeader" sx={{ marginBottom: '0.5rem' }}>
